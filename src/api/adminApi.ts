@@ -1,7 +1,7 @@
 import axios from "axios";
 
-// const API_BASE = "https://finzz-backend.onrender.com/api/v1/admin";
-const API_BASE = "http://localhost:3000/api/v1/admin";
+const API_BASE = "https://finzz-backend.onrender.com/api/v1/admin";
+// const API_BASE = "http://localhost:3000/api/v1/admin";
 
 const api = axios.create({
   baseURL: API_BASE,
