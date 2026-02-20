@@ -1,6 +1,7 @@
 import axios from "axios";
 
-const API_BASE = "https://finzz-backend.onrender.com/api/v1/admin";
+// const API_BASE = "https://finzz-backend.onrender.com/api/v1/admin";
+const API_BASE = "http://localhost:3000/api/v1/admin";
 
 const api = axios.create({
   baseURL: API_BASE,
@@ -42,6 +43,10 @@ export const getAllExpensesApi = (params: {
 // Pools
 export const getAllPoolsApi = (params: { page?: number; limit?: number }) =>
   api.get("/pools", { params });
+
+export const getPoolDashboardStatsApi = () => api.get("/pools/dashboard");
+
+export const getAdminPoolDetailApi = (id: string) => api.get(`/pools/${id}`);
 
 // Notifications
 export const sendBulkNotificationApi = (title: string, body: string) =>

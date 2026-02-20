@@ -319,7 +319,7 @@ export default function ExpensesPage() {
                       borderRadius: 10,
                       border: "none",
                     }}
-                    formatter={(value: number | undefined) => [
+                    formatter={(value: any) => [
                       `₹${(value || 0).toLocaleString()}`,
                       "Amount",
                     ]}
@@ -356,7 +356,7 @@ export default function ExpensesPage() {
                     ))}
                   </Pie>
                   <Tooltip
-                    formatter={(value: number | undefined) => [
+                    formatter={(value: any) => [
                       `₹${(value || 0).toLocaleString()}`,
                       "Amount",
                     ]}

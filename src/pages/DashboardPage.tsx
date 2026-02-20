@@ -22,7 +22,6 @@ import {
 } from "recharts";
 import {
   Users,
-  Receipt,
   Wallet,
   TrendingUp,
   IndianRupee,
@@ -49,7 +48,7 @@ const containerVariants = {
   },
 };
 
-const itemVariants = {
+const itemVariants: any = {
   hidden: { opacity: 0, y: 20 },
   visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: "easeOut" } },
 };
@@ -206,7 +205,7 @@ export default function DashboardPage() {
                     border: "none",
                     boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
                   }}
-                  formatter={(value: number) => [
+                  formatter={(value: any) => [
                     `₹${value.toLocaleString()}`,
                     "Amount",
                   ]}
@@ -255,7 +254,7 @@ export default function DashboardPage() {
                     border: "none",
                     boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
                   }}
-                  formatter={(value: number) => [
+                  formatter={(value: any) => [
                     `₹${value.toLocaleString()}`,
                     "Amount",
                   ]}

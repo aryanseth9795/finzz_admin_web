@@ -8,6 +8,7 @@ import UsersPage from "./pages/UsersPage";
 import UserDetailPage from "./pages/UserDetailPage";
 import ExpensesPage from "./pages/ExpensesPage";
 import PoolsPage from "./pages/PoolsPage";
+import PoolDetailPage from "./pages/PoolDetailPage";
 import NotificationsPage from "./pages/NotificationsPage";
 import { adminVerifyApi } from "./api/adminApi";
 
@@ -62,6 +63,7 @@ function App() {
           <Route path="/users/:id" element={<UserDetailPage />} />
           <Route path="/expenses" element={<ExpensesPage />} />
           <Route path="/pools" element={<PoolsPage />} />
+          <Route path="/pools/:id" element={<PoolDetailPage />} />
           <Route path="/notifications" element={<NotificationsPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

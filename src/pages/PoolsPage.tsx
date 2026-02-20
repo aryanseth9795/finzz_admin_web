@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Users, Wallet } from "lucide-react";
-import { getAllPoolsApi } from "../api/adminApi";
+import { Users, Wallet, Activity, XCircle, Database } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { getAllPoolsApi, getPoolDashboardStatsApi } from "../api/adminApi";
 
 export default function PoolsPage() {
+  const navigate = useNavigate();
   const [pools, setPools] = useState<any[]>([]);
+  const [stats, setStats] = useState<any>(null);
   const [pagination, setPagination] = useState<any>({});
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -16,9 +19,13 @@ export default function PoolsPage() {
   const loadPools = async () => {
     setLoading(true);
     try {
-      const res = await getAllPoolsApi({ page, limit: 20 });
-      setPools(res.data.pools);
-      setPagination(res.data.pagination);
+      const [poolsRes, statsRes] = await Promise.all([
+        getAllPoolsApi({ page, limit: 20 }),
+        getPoolDashboardStatsApi(),
+      ]);
+      setPools(poolsRes.data.pools);
+      setPagination(poolsRes.data.pagination);
+      setStats(statsRes.data.stats);
     } catch (error) {
       console.error("Failed to load pools:", error);
     } finally {
@@ -46,6 +53,68 @@ export default function PoolsPage() {
           </div>
         ) : (
           <>
+            {stats && (
+              <div
+                style={{
+                  display: "flex",
+                  gap: 16,
+                  marginBottom: 32,
+                  overflowX: "auto",
+                  paddingBottom: 8,
+                }}
+              >
+                <div className="stat-card" style={{ minWidth: 200, flex: 1 }}>
+                  <div className="stat-header">
+                    <div
+                      className="stat-icon"
+                      style={{
+                        background: "rgba(34, 197, 94, 0.1)",
+                        color: "#22c55e",
+                      }}
+                    >
+                      <Activity size={20} />
+                    </div>
+                    <span className="stat-title">Active Pools</span>
+                  </div>
+                  <div className="stat-value">{stats.activePools}</div>
+                </div>
+
+                <div className="stat-card" style={{ minWidth: 200, flex: 1 }}>
+                  <div className="stat-header">
+                    <div
+                      className="stat-icon"
+                      style={{
+                        background: "rgba(239, 68, 68, 0.1)",
+                        color: "#ef4444",
+                      }}
+                    >
+                      <XCircle size={20} />
+                    </div>
+                    <span className="stat-title">Closed Pools</span>
+                  </div>
+                  <div className="stat-value">{stats.closedPools}</div>
+                </div>
+
+                <div className="stat-card" style={{ minWidth: 200, flex: 1 }}>
+                  <div className="stat-header">
+                    <div
+                      className="stat-icon"
+                      style={{
+                        background: "rgba(234, 179, 8, 0.1)",
+                        color: "#eab308",
+                      }}
+                    >
+                      <Database size={20} />
+                    </div>
+                    <span className="stat-title">Net Balance</span>
+                  </div>
+                  <div className="stat-value">
+                    ₹{stats.netBalance?.toLocaleString() || 0}
+                  </div>
+                </div>
+              </div>
+            )}
+
             <motion.div
               style={{
                 display: "grid",
@@ -78,6 +147,8 @@ export default function PoolsPage() {
                     }}
                     whileHover={{ y: -4, transition: { duration: 0.2 } }}
                     layout
+                    style={{ cursor: "pointer" }}
+                    onClick={() => navigate(`/pools/${pool._id}`)}
                   >
                     <div
                       style={{
@@ -98,7 +169,7 @@ export default function PoolsPage() {
                             marginTop: 2,
                           }}
                         >
-                          by {pool.createdBy?.name || "Unknown"}
+                          by {pool.admin?.name || "Unknown"}
                         </p>
                       </div>
                       <span
@@ -155,21 +226,38 @@ export default function PoolsPage() {
                           gap: 4,
                         }}
                       >
-                        {pool.members.slice(0, 5).map((m: any, i: number) => (
-                          <div
-                            key={i}
-                            className="table-avatar-placeholder"
-                            style={{
-                              width: 30,
-                              height: 30,
-                              fontSize: 11,
-                              marginLeft: i > 0 ? -8 : 0,
-                              border: "2px solid white",
-                            }}
-                          >
-                            {m.userId?.name?.charAt(0)?.toUpperCase() || "?"}
-                          </div>
-                        ))}
+                        {pool.members.slice(0, 5).map((m: any, i: number) =>
+                          m.avatar ? (
+                            <img
+                              key={i}
+                              src={m.avatar}
+                              alt=""
+                              className="table-avatar"
+                              style={{
+                                width: 30,
+                                height: 30,
+                                marginLeft: i > 0 ? -8 : 0,
+                                border: "2px solid white",
+                                objectFit: "cover",
+                                borderRadius: "50%",
+                              }}
+                            />
+                          ) : (
+                            <div
+                              key={i}
+                              className="table-avatar-placeholder"
+                              style={{
+                                width: 30,
+                                height: 30,
+                                fontSize: 11,
+                                marginLeft: i > 0 ? -8 : 0,
+                                border: "2px solid white",
+                              }}
+                            >
+                              {m.name?.charAt(0)?.toUpperCase() || "?"}
+                            </div>
+                          ),
+                        )}
                         {pool.members.length > 5 && (
                           <div
                             className="table-avatar-placeholder"

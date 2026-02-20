@@ -220,7 +220,7 @@ export default function UserDetailPage() {
                     ))}
                   </Pie>
                   <Tooltip
-                    formatter={(value: number) => [
+                    formatter={(value: any) => [
                       `₹${value.toLocaleString()}`,
                       "Amount",
                     ]}
