@@ -52,4 +52,10 @@ export const getAdminPoolDetailApi = (id: string) => api.get(`/pools/${id}`);
 export const sendBulkNotificationApi = (title: string, body: string) =>
   api.post("/notifications/bulk", { title, body });
 
+export const sendTargetedNotificationApi = (
+  userIds: string[],
+  title: string,
+  body: string,
+) => api.post("/notifications/targeted", { userIds, title, body });
+
 export default api;
