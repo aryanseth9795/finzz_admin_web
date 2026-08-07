@@ -15,6 +15,8 @@ import {
   sendBulkNotificationApi,
   sendTargetedNotificationApi,
   getAllUsersApi,
+  describeError,
+  type DeliveryResult,
 } from "../api/adminApi";
 import toast from "react-hot-toast";
 
@@ -32,7 +34,9 @@ export default function NotificationsPage() {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [loading, setLoading] = useState(false);
-  const [lastResult, setLastResult] = useState<any>(null);
+  const [lastResult, setLastResult] = useState<
+    (DeliveryResult & { targetType: TargetType }) | null
+  >(null);
 
   const [targetType, setTargetType] = useState<TargetType>("all");
   const [search, setSearch] = useState("");
@@ -98,7 +102,13 @@ export default function NotificationsPage() {
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (!title) return;
+
+    // `.trim()` matters: the old check was `if (!title) return`, so a title of
+    // "   " passed both this and the server's own `if (!title)`.
+    if (!title.trim()) {
+      toast.error("A title is required.");
+      return;
+    }
 
     if (targetType === "selected" && selectedUsers.size === 0) {
       toast.error("Please select at least one user.");
@@ -108,32 +118,57 @@ export default function NotificationsPage() {
     setShowConfirm(true);
   };
 
+  /**
+   * Report what actually happened.
+   *
+   * The toast said "Notification sent to N users!" using `sentCount`, which
+   * the server computed as `chunk.length` — the number of messages HANDED to
+   * Expo, not delivered. Every ticket, including `DeviceNotRegistered` errors,
+   * was discarded. So if half the stored tokens belonged to uninstalled apps,
+   * the toast still claimed success for all of them.
+   *
+   * The server now returns three distinct numbers because they mean three
+   * different things, and the UI reports all three rather than collapsing
+   * them into one reassuring figure.
+   */
   const confirmSend = async () => {
     setShowConfirm(false);
     setLoading(true);
     try {
-      let res;
-      if (targetType === "all") {
-        res = await sendBulkNotificationApi(title, body);
-        toast.success(`Notification sent to ${res.data.sentCount} users!`);
-      } else {
-        const userIds = Array.from(selectedUsers.keys());
-        res = await sendTargetedNotificationApi(userIds, title, body);
+      const trimmedTitle = title.trim();
+      const trimmedBody = body.trim();
+
+      const res =
+        targetType === "all"
+          ? await sendBulkNotificationApi(trimmedTitle, trimmedBody)
+          : await sendTargetedNotificationApi(
+              Array.from(selectedUsers.keys()),
+              trimmedTitle,
+              trimmedBody,
+            );
+
+      const { accepted = 0, rejected = 0, skipped = 0 } = res.data;
+
+      if (accepted === 0) {
+        toast.error("No devices accepted the notification.");
+      } else if (rejected > 0 || skipped > 0) {
         toast.success(
-          `Notification sent to ${res.data.sentCount} out of ${res.data.totalSelectedUsers} users!`,
+          `Delivered to ${accepted} device(s). ${rejected} rejected, ${skipped} had no push token.`,
         );
+      } else {
+        toast.success(`Delivered to ${accepted} device(s).`);
       }
+
       setLastResult({ ...res.data, targetType });
       setTitle("");
       setBody("");
       if (targetType === "selected") {
         setSelectedUsers(new Map());
         setSearch("");
+        setSearchResults([]);
       }
-    } catch (error: any) {
-      toast.error(
-        error.response?.data?.message || "Failed to send notification",
-      );
+    } catch (error) {
+      toast.error(describeError(error));
     } finally {
       setLoading(false);
     }
@@ -156,7 +191,7 @@ export default function NotificationsPage() {
 
       <div className="page-content">
         <div
-          style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}
+          className="notifications-grid"
         >
           {/* Form */}
           <motion.div
@@ -186,7 +221,7 @@ export default function NotificationsPage() {
                     marginBottom: 6,
                   }}
                 >
-                  <label className="form-label" style={{ marginBottom: 0 }}>
+                  <label htmlFor="notif-title" className="form-label" style={{ marginBottom: 0 }}>
                     Title
                   </label>
                   <button
@@ -208,6 +243,7 @@ export default function NotificationsPage() {
                   </button>
                 </div>
                 <input
+                  id="notif-title"
                   type="text"
                   className="form-input"
                   placeholder="e.g. New Update Available!"
@@ -244,7 +280,7 @@ export default function NotificationsPage() {
                     marginBottom: 6,
                   }}
                 >
-                  <label className="form-label" style={{ marginBottom: 0 }}>
+                  <label htmlFor="notif-body" className="form-label" style={{ marginBottom: 0 }}>
                     Message
                   </label>
                   <button
@@ -266,6 +302,7 @@ export default function NotificationsPage() {
                   </button>
                 </div>
                 <textarea
+                  id="notif-body"
                   className="form-textarea"
                   placeholder="e.g. We've added exciting new features..."
                   value={body}
@@ -579,16 +616,41 @@ export default function NotificationsPage() {
                     marginBottom: 4,
                   }}
                 >
-                  ✅ Notification Sent!
+                  Notification submitted
                 </div>
+                {/*
+                  Three numbers, because they mean three different things.
+                  This previously read "Delivered to N out of M" using a count
+                  of messages HANDED to Expo — a delivery claim the system had
+                  no basis for.
+                */}
                 <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>
-                  Delivered to <strong>{lastResult.sentCount}</strong> out of{" "}
-                  <strong>
-                    {lastResult.totalUsersWithTokens ||
-                      lastResult.totalSelectedUsers}
-                  </strong>{" "}
-                  {lastResult.targetType === "all" ? "total" : "selected"} users
-                  with push tokens.
+                  <div>
+                    Accepted by Expo:{" "}
+                    <strong>{lastResult.accepted ?? 0}</strong> device(s)
+                  </div>
+                  {(lastResult.rejected ?? 0) > 0 && (
+                    <div>
+                      Rejected: <strong>{lastResult.rejected}</strong> (dead or
+                      invalid token)
+                    </div>
+                  )}
+                  {(lastResult.skipped ?? 0) > 0 && (
+                    <div>
+                      No push token: <strong>{lastResult.skipped}</strong>{" "}
+                      user(s)
+                    </div>
+                  )}
+                  <div
+                    style={{
+                      marginTop: 6,
+                      fontSize: 12,
+                      color: "var(--text-tertiary)",
+                    }}
+                  >
+                    "Accepted" means Expo queued the message. Actual delivery
+                    depends on the device.
+                  </div>
                 </div>
               </motion.div>
             )}

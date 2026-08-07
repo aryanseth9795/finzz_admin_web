@@ -1,33 +1,51 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 import { ArrowLeft, Phone, Receipt, Wallet, Users } from "lucide-react";
-import { getUserDetailApi } from "../api/adminApi";
+import {
+  getUserDetailApi,
+  describeError,
+  type UserDetailResponse,
+  type AdminLedger,
+} from "../api/adminApi";
 
 const COLORS = ["#4F46E5", "#06B6D4", "#10B981", "#F59E0B", "#EF4444"];
 
 export default function UserDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<UserDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadUser();
-  }, [id]);
-
-  const loadUser = async () => {
+  /**
+   * `useCallback` with `id` in the dependency list.
+   *
+   * The effect previously called a function declared OUTSIDE it and listed
+   * only `[id]`, which `react-hooks/exhaustive-deps` flags — and that lint
+   * rule had never run, because `npm run lint` crashed on an ESLint version
+   * mismatch. It also never reset `loading` on an id change, so navigating
+   * from one user to another showed the PREVIOUS user's name, phone, ledgers
+   * and friends while the new request was in flight.
+   */
+  const reload = useCallback(async () => {
     if (!id) return;
+    setLoading(true);
+    setError(null);
     try {
       const res = await getUserDetailApi(id);
       setData(res.data);
-    } catch (error) {
-      console.error("Failed to load user:", error);
+    } catch (err) {
+      setError(describeError(err));
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
 
   if (loading) {
     return (
@@ -37,12 +55,31 @@ export default function UserDetailPage() {
     );
   }
 
-  if (!data) return null;
+  // Was `return null` — a completely blank page on any failure, with no
+  // message, no retry, and not even the back button from the success path.
+  if (error || !data) {
+    return (
+      <div className="error-state" role="alert">
+        <h2 className="error-state-title">Could not load this page</h2>
+        <p className="error-state-message">{error ?? "No data was returned."}</p>
+        <div className="error-state-actions">
+          <button className="btn btn-primary" onClick={reload}>Retry</button>
+          <button className="btn btn-outline" onClick={() => navigate(-1)}>Go back</button>
+        </div>
+      </div>
+    );
+  }
 
   const { user, expenseSummary, pools, ledgers } = data;
 
+  // Drop nulls left by deleted users, so a dangling reference renders one
+  // fewer row instead of throwing on `friend.avatar`.
+  const friends = (user.friends ?? []).filter(
+    (f): f is NonNullable<typeof f> => Boolean(f),
+  );
+
   // Prepare ledger data for mini pie
-  const ledgerPieData = ledgers?.slice(0, 5).map((l: any) => ({
+  const ledgerPieData = ledgers?.slice(0, 5).map((l: AdminLedger) => ({
     name: `${l.year}-${String(l.month).padStart(2, "0")}`,
     value: l.totalExpenses || 0,
   }));
@@ -135,7 +172,7 @@ export default function UserDetailPage() {
             </div>
             <div className="stat-info">
               <div className="stat-label">Friends</div>
-              <div className="stat-value">{user.friends?.length || 0}</div>
+              <div className="stat-value">{friends.length}</div>
             </div>
           </div>
         </motion.div>
@@ -161,7 +198,7 @@ export default function UserDetailPage() {
                 </tr>
               </thead>
               <tbody>
-                {ledgers?.map((ledger: any) => (
+                {ledgers?.map((ledger: AdminLedger) => (
                   <tr key={ledger._id}>
                     <td>
                       {ledger.year}-{String(ledger.month).padStart(2, "0")}
@@ -237,7 +274,7 @@ export default function UserDetailPage() {
         </motion.div>
 
         {/* Friends */}
-        {user.friends?.length > 0 && (
+        {(friends.length > 0) && (
           <motion.div
             className="data-table-container"
             style={{ marginTop: 20 }}
@@ -256,7 +293,7 @@ export default function UserDetailPage() {
                 </tr>
               </thead>
               <tbody>
-                {user.friends.map((friend: any) => (
+                {friends.map((friend) => (
                   <tr key={friend._id}>
                     <td>
                       <div className="table-user-cell">

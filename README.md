@@ -1,73 +1,64 @@
-# React + TypeScript + Vite
+# ✨ Finzz ✨
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+**Your Ultimate Peer-to-Peer Financial Companion**
 
-Currently, two official plugins are available:
+> *Stop arguing over who owes what. Track personal expenses, manage shared ledgers with friends, and settle up cleanly with beautifully verified transactions.*
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+---
 
-## React Compiler
+## 🌟 Welcome to Finzz
 
-The React Compiler is currently not compatible with SWC. See [this issue](https://github.com/vitejs/vite-plugin-react/issues/428) for tracking the progress.
+**Finzz** is the modern solution to messy notebooks and unverified "IOUs". It bridges the gap between your personal money management and the expenses you share with friends. From tracking your daily coffee to managing group bills, Finzz brings ultimate financial transparency right to your fingertips.
 
-## Expanding the ESLint configuration
+Built with a gorgeous interface, dark-mode integration, and fluid animations, Finzz offers an experience that is both highly powerful and incredibly easy to use.
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+---
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+## 🚀 Key Features
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+### 🤝 Peer-to-Peer Shared Ledgers 
+Never lose track of what you owe a friend, or what they owe you.
+* **Chat-Style Ledgers:** Adding a shared expense feels completely natural—just like sending a message in a chat.
+* **Two-Way Verification:** Built-in trust! When you add a shared expense, your friend receives a notification and must **Verify** or **Reject** it. 
+* **Seamless Rejections:** If an expense is incorrect, your friend can reject it and attach an explanatory remark. You can easily view their reason, then Edit or Delete the transaction immediately.
+* **Instant Settlements:** See exactly what your net balance is ("To Pay" or "To Receive") with a friend at any given moment.
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+### 📊 Personal Expense Management
+Stay in control of your daily budget with a private, personal ledger.
+* **Track Debits & Credits:** Easily log your income (credits) and spending (debits).
+* **Categorization:** Tag your expenses by category (Food, Transport, Rent, etc.) to understand your exact spending habits.
+* **High Capacity:** Track amounts smoothly up to ₹1 Crore with clean Indian numbering system formats.
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+### 📑 Automated Rollovers & Carry-Forwards
+Financial tracking shouldn't reset to zero if you haven't settled up!
+* **Smart Rollover:** If you have an unsettled balance at the end of the month, Finzz automatically calculates a "Carry Forward" balance and moves it to the next month's ledger.
+* **Continuous Tracking:** You always have an accurate lifetime view of your finances alongside the current month's breakdown.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+### 🖼️ Premium PDF Reports & Analytics
+Turn your raw numbers into beautiful, printable data. 
+* **Offline Export:** Generate stunning infographics directly on your device.
+* **Visual Insights:** Get color-coded comparison bars highlighting what you've Sent vs. Received.
+* **Daily Activity Charts:** Read an automatically generated vertical bar chart showing exactly which days of the month you spent the most money.
+* **One-Tap Sharing:** Export and share these professional PDF reports instantly to WhatsApp, Email, or any installed app.
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+### 🔔 Real-Time Push Notifications
+Always stay in the loop without having to open the app.
+* **Instant Alerts:** Get pinged the exact second a friend sends you a friend request.
+* **Transaction Updates:** Know immediately when an expense is added, verified, or rejected by your connection.
+
+### 🔐 Secure, Synchronized & Always Backed Up
+* **Cloud Sync:** Your financial data is securely synced to the cloud. Change phones? Log in and pick up right where you left off.
+* **Rock-Solid Sessions:** Smooth backend architecture guarantees you stay logged in securely, managing token refreshes entirely behind the scenes.
+* **OTP Email Verification:** Real identity checks ensure a trusted ecosystem of users.
+
+---
+
+## 🎨 User Experience Highlights
+
+* 🌓 **Adaptive Theming:** Flawless Dark Mode and Light Mode support that dynamically transitions based on your device settings.
+* ⚡ **Silky Performance:** Engineered with native-level animations meant to feel responsive and premium.
+* 🧑‍🎨 **Personalized Profiles:** Upload dynamic avatars, set your details, and easily connect with a growing network of users.
+
+---
+
+*Finzz represents a new era of money management—one built entirely around collaboration, verifiable trust, and beautiful analytics.*

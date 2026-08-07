@@ -1,0 +1,12 @@
+# Netlify security headers.
+#
+# The panel previously sent none. A CSP in particular meaningfully reduces the
+# blast radius of the axios prototype-pollution advisories, since an injected
+# script would still have nowhere to exfiltrate to.
+/*
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://res.cloudinary.com; connect-src 'self' https://finzz-backend.onrender.com http://localhost:3000; frame-ancestors 'none'; base-uri 'self'; form-action 'self'

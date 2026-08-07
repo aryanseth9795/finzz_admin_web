@@ -14,7 +14,25 @@ import {
   Legend,
 } from "recharts";
 import { Calendar, Download } from "lucide-react";
-import { getAllExpensesApi, getAllUsersApi } from "../api/adminApi";
+import toast from "react-hot-toast";
+import {
+  getAllExpensesApi,
+  getAllUsersApi,
+  describeError,
+  type AdminUser,
+  type AdminExpense,
+  type Pagination as PaginationMeta,
+  type ExpenseTotals,
+  populatedUser,
+} from "../api/adminApi";
+import Pagination from "../components/Pagination";
+import {
+  formatAmount,
+  describeTableScope,
+  describeFilterTotal,
+  describePeriod,
+  pageTotal,
+} from "./expenseReport";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
@@ -30,103 +48,162 @@ const PIE_COLORS = [
 ];
 
 export default function ExpensesPage() {
-  const [users, setUsers] = useState<any[]>([]);
+  // Typed, not `any[]`. The repo had no interface describing an API response
+  // anywhere, which is why the always-empty `pools` array and the dashboard's
+  // unguarded field access both went unnoticed.
+  const [users, setUsers] = useState<AdminUser[]>([]);
   const [selectedUser, setSelectedUser] = useState("");
-  const [expenses, setExpenses] = useState<any[]>([]);
-  const [pagination, setPagination] = useState<any>({});
+  const [expenses, setExpenses] = useState<AdminExpense[]>([]);
+  const [pagination, setPagination] = useState<PaginationMeta | null>(null);
+  const [totals, setTotals] = useState<ExpenseTotals | null>(null);
   const [page, setPage] = useState(1);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Fetch users for dropdown
+  /**
+   * Users for the filter dropdown.
+   *
+   * Was `getAllUsersApi({ limit: 1000 })` with a bare `.then()` and NO
+   * `.catch()` — an unhandled promise rejection on every failure, and a
+   * multi-megabyte response (full documents, including avatars and friend
+   * arrays) fetched on every visit to render a `<select>` that uses two
+   * fields. It also silently capped at 1,000, so user 1,001 could never be
+   * selected and nothing indicated the list was truncated.
+   *
+   * `sort=name` plus a smaller page keeps it usable; the error is surfaced
+   * rather than swallowed.
+   */
   useEffect(() => {
-    getAllUsersApi({ limit: 1000 }).then((res) => {
-      setUsers(res.data.users);
-    });
+    let cancelled = false;
+    getAllUsersApi({ limit: 200, sort: "name" })
+      .then((res) => {
+        if (!cancelled) setUsers(res.data.users ?? []);
+      })
+      .catch((err) => {
+        if (!cancelled) toast.error(describeError(err));
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const loadExpenses = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
-      const params: any = { page, limit: 50 }; // Increased limit for better reporting
-      if (startDate) params.startDate = startDate;
-      if (endDate) params.endDate = endDate;
-      if (selectedUser) params.userId = selectedUser;
-
-      const res = await getAllExpensesApi(params);
-      setExpenses(res.data.expenses);
+      const res = await getAllExpensesApi({
+        page,
+        limit: 50,
+        ...(startDate ? { startDate } : {}),
+        ...(endDate ? { endDate } : {}),
+        ...(selectedUser ? { userId: selectedUser } : {}),
+      });
+      setExpenses(res.data.expenses ?? []);
       setPagination(res.data.pagination);
-    } catch (error) {
-      console.error("Failed to load expenses:", error);
+      // Server-computed totals over the WHOLE filtered set — see the PDF
+      // export below for why the page-derived version was wrong.
+      setTotals(res.data.totals ?? null);
+    } catch (err) {
+      // Was `console.error` alone, so a failed request rendered as an empty
+      // table indistinguishable from "no expenses match".
+      setError(describeError(err));
     } finally {
       setLoading(false);
     }
   }, [page, startDate, endDate, selectedUser]);
 
+  /**
+   * Export the current filter as a PDF.
+   *
+   * THE BUG THIS FIXES
+   * The document was headed `Period: All Time` and printed a `Total Amount`,
+   * but both the table and the total came from `expenses` — a SINGLE PAGE of
+   * 50 rows. On a 500-row filter it reported one tenth of the real figure
+   * under an explicit claim to cover everything, with no page indicator and no
+   * row count.
+   *
+   * That is worse than an on-screen error because the output is a DOCUMENT: it
+   * detaches from the UI, gets filed, emailed and cited, and nothing in the
+   * artefact reveals the truncation.
+   *
+   * Two changes make it honest:
+   *   1. The headline total is the server's aggregate over the whole filtered
+   *      set (`totals.totalAmount`), because a client cannot compute a total
+   *      it does not hold.
+   *   2. The table states exactly what it contains — "rows 1–50 of 523" — so
+   *      the page total and the filter total can never be mistaken for each
+   *      other.
+   */
   const handleDownloadPDF = () => {
     const doc = new jsPDF();
+    const generatedAt = new Date();
 
-    // Title
     doc.setFontSize(18);
+    doc.setTextColor(30);
     doc.text("Expense Report", 14, 22);
 
-    // Meta Info
-    doc.setFontSize(11);
+    doc.setFontSize(10);
     doc.setTextColor(100);
-
     let yPos = 30;
 
-    if (selectedUser) {
-      const user = users.find((u) => u._id === selectedUser);
-      doc.text(
-        `User: ${user?.name || "Unknown"} (${user?.phone || ""})`,
-        14,
-        yPos,
-      );
-      yPos += 6;
-    } else {
-      doc.text("User: All Users", 14, yPos);
-      yPos += 6;
-    }
+    const line = (text: string) => {
+      doc.text(text, 14, yPos);
+      yPos += 5.5;
+    };
 
-    if (startDate || endDate) {
-      doc.text(
-        `Period: ${startDate || "Start"} to ${endDate || "Now"}`,
-        14,
-        yPos,
-      );
-      yPos += 10;
-    } else {
-      doc.text("Period: All Time", 14, yPos);
-      yPos += 10;
-    }
-
-    // Calculate Total
-    const totalAmount = expenses.reduce(
-      (sum, exp) => sum + (exp.amount || 0),
-      0,
+    const selected = users.find((u) => u._id === selectedUser);
+    line(
+      selectedUser
+        ? `User: ${selected?.name ?? "Unknown"}${selected?.phone ? ` (${selected.phone})` : ""}`
+        : "User: All users",
     );
-    doc.text(`Total Amount: ${totalAmount.toFixed(2)}`, 14, yPos);
+    line(describePeriod(startDate, endDate));
+    line(`Generated: ${generatedAt.toLocaleString("en-IN")}`);
 
-    // Table
-    const tableData = expenses.map((exp) => [
-      new Date(exp.date).toLocaleDateString(),
-      exp.category || "Uncategorized",
-      exp.remarks || "-",
-      exp.amount?.toFixed(2),
-    ]);
+    yPos += 3;
+    doc.setFontSize(11);
+    doc.setTextColor(30);
+
+    // The true figure for the selected filter — the server's aggregate over
+    // the whole set, not a sum of the rows this client happens to hold.
+    line(describeFilterTotal(totals));
+
+    doc.setFontSize(9);
+    doc.setTextColor(120);
+    // The sentence that was missing. Without it a reader has no way to know
+    // the table is a slice. Extracted and tested in expenseReport.test.ts —
+    // the range arithmetic is the part that was wrong.
+    line(describeTableScope(page, expenses.length, pagination));
+
+    const printedTotal = pageTotal(expenses);
 
     autoTable(doc, {
-      startY: yPos + 10,
-      head: [["Date", "Category", "Remarks", "Amount"]],
-      body: tableData,
+      startY: yPos + 4,
+      head: [["Date", "User", "Category", "Remarks", "Amount (INR)"]],
+      body: expenses.map((exp) => [
+        // Explicit locale: an unqualified toLocaleDateString produced a
+        // different format on every machine, inside an exported document.
+        new Date(exp.date).toLocaleDateString("en-IN"),
+        typeof exp.userId === "object" && exp.userId
+          ? (exp.userId.name ?? "—")
+          : "—",
+        exp.category || "Uncategorised",
+        exp.remarks || "—",
+        // "INR" in the header rather than "₹" in each cell: jsPDF's default
+        // Helvetica cannot encode U+20B9, so the symbol rendered as garbage.
+        formatAmount(Number(exp.amount) || 0),
+      ]),
       theme: "grid",
+      styles: { fontSize: 9 },
       headStyles: { fillColor: [79, 70, 229] },
-      foot: [["", "", "Total", totalAmount.toFixed(2)]],
+      foot: [["", "", "", "Page total", formatAmount(printedTotal)]],
+      footStyles: { fillColor: [241, 245, 249], textColor: 30 },
     });
 
-    doc.save(`expenses_report_${new Date().toISOString().split("T")[0]}.pdf`);
+    const stamp = generatedAt.toISOString().split("T")[0];
+    doc.save(`finzz-expenses-${stamp}.pdf`);
   };
 
   useEffect(() => {
@@ -204,16 +281,14 @@ export default function ExpensesPage() {
           {/* User Select */}
           <div className="form-group" style={{ margin: 0 }}>
             <label
-              style={{
-                fontSize: 12,
-                color: "var(--text-secondary)",
-                marginRight: 8,
-              }}
+              htmlFor="filter-user"
+              style={{ fontSize: 12, color: "var(--text-secondary)", marginRight: 8 }}
             >
               User:
             </label>
             <select
               className="form-input"
+              id="filter-user"
               style={{ width: "auto", padding: "6px 12px" }}
               value={selectedUser}
               onChange={(e) => {
@@ -232,16 +307,14 @@ export default function ExpensesPage() {
 
           <div className="form-group" style={{ margin: 0 }}>
             <label
-              style={{
-                fontSize: 12,
-                color: "var(--text-secondary)",
-                marginRight: 8,
-              }}
+              htmlFor="filter-from"
+              style={{ fontSize: 12, color: "var(--text-secondary)", marginRight: 8 }}
             >
               From:
             </label>
             <input
               type="date"
+              id="filter-from"
               className="form-input"
               style={{ width: "auto", padding: "6px 12px" }}
               value={startDate}
@@ -253,16 +326,14 @@ export default function ExpensesPage() {
           </div>
           <div className="form-group" style={{ margin: 0 }}>
             <label
-              style={{
-                fontSize: 12,
-                color: "var(--text-secondary)",
-                marginRight: 8,
-              }}
+              htmlFor="filter-to"
+              style={{ fontSize: 12, color: "var(--text-secondary)", marginRight: 8 }}
             >
               To:
             </label>
             <input
               type="date"
+              id="filter-to"
               className="form-input"
               style={{ width: "auto", padding: "6px 12px" }}
               value={endDate}
@@ -384,14 +455,30 @@ export default function ExpensesPage() {
             <h3 className="data-table-title">
               All Expenses{" "}
               <span style={{ color: "var(--text-tertiary)", fontWeight: 400 }}>
-                ({pagination.total || 0})
+                ({pagination?.total ?? 0})
               </span>
             </h3>
           </div>
 
+          {/*
+            Three distinct states: loading, error, and genuinely empty.
+            Previously a failed request fell through to the empty table, so
+            "the request broke" was indistinguishable from "nothing matched".
+          */}
           {loading ? (
-            <div className="loading-container">
+            <div className="loading-container" aria-busy="true">
               <div className="spinner" />
+              <span className="sr-only">Loading expenses</span>
+            </div>
+          ) : error ? (
+            <div className="error-state" role="alert">
+              <h3 className="error-state-title">Could not load expenses</h3>
+              <p className="error-state-message">{error}</p>
+              <div className="error-state-actions">
+                <button className="btn btn-primary" onClick={loadExpenses}>
+                  Retry
+                </button>
+              </div>
             </div>
           ) : (
             <>
@@ -421,15 +508,14 @@ export default function ExpensesPage() {
                               className="table-avatar-placeholder"
                               style={{ width: 28, height: 28, fontSize: 11 }}
                             >
-                              {exp.userId?.name?.charAt(0)?.toUpperCase() ||
-                                "?"}
+                              {populatedUser(exp.userId)?.name?.charAt(0)?.toUpperCase() ?? "?"}
                             </div>
                             <div>
                               <div
                                 className="table-user-name"
                                 style={{ fontSize: 13 }}
                               >
-                                {exp.userId?.name || "Unknown"}
+                                {populatedUser(exp.userId)?.name ?? "Deleted user"}
                               </div>
                               <div
                                 style={{
@@ -437,7 +523,7 @@ export default function ExpensesPage() {
                                   color: "var(--text-tertiary)",
                                 }}
                               >
-                                {exp.userId?.phone}
+                                {populatedUser(exp.userId)?.phone ?? ""}
                               </div>
                             </div>
                           </div>
@@ -463,29 +549,12 @@ export default function ExpensesPage() {
                 </tbody>
               </table>
 
-              {pagination.pages > 1 && (
-                <div className="pagination">
-                  <div className="pagination-info">
-                    Page {page} of {pagination.pages}
-                  </div>
-                  <div className="pagination-buttons">
-                    <button
-                      className="pagination-btn"
-                      disabled={page <= 1}
-                      onClick={() => setPage(page - 1)}
-                    >
-                      Previous
-                    </button>
-                    <button
-                      className="pagination-btn"
-                      disabled={page >= pagination.pages}
-                      onClick={() => setPage(page + 1)}
-                    >
-                      Next
-                    </button>
-                  </div>
-                </div>
-              )}
+              <Pagination
+                pagination={pagination}
+                page={page}
+                onPageChange={setPage}
+                rowCount={expenses.length}
+              />
             </>
           )}
         </motion.div>

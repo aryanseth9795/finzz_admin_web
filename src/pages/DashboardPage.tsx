@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { motion } from "framer-motion";
 import {
   AreaChart,
@@ -25,9 +25,12 @@ import {
   Wallet,
   TrendingUp,
   IndianRupee,
-  ArrowUpRight,
 } from "lucide-react";
-import { getDashboardStatsApi } from "../api/adminApi";
+import {
+  getDashboardStatsApi,
+  describeError,
+  type DashboardStats,
+} from "../api/adminApi";
 
 const CHART_COLORS = [
   "#4F46E5",
@@ -53,69 +56,111 @@ const itemVariants: any = {
   visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: "easeOut" } },
 };
 
+/** Format a possibly-absent numeric field without throwing. */
+const num = (value: number | undefined | null): string =>
+  Number.isFinite(Number(value)) ? Number(value).toLocaleString("en-IN") : "—";
+
 export default function DashboardPage() {
-  const [stats, setStats] = useState<any>(null);
+  const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadStats();
-  }, []);
-
-  const loadStats = async () => {
+  const loadStats = useCallback(async () => {
+    setLoading(true);
+    setError(null);
     try {
       const res = await getDashboardStatsApi();
       setStats(res.data.stats);
-    } catch (error) {
-      console.error("Failed to load stats:", error);
+    } catch (err) {
+      setError(describeError(err));
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    void loadStats();
+  }, [loadStats]);
 
   if (loading) {
     return (
-      <div className="loading-container">
+      <div className="loading-container" aria-busy="true">
         <div className="spinner" />
+        <span className="sr-only">Loading dashboard</span>
       </div>
     );
   }
 
-  if (!stats) return null;
+  /**
+   * Was `if (!stats) return null` — a completely blank page on any failure,
+   * on the screen shown immediately after login, with no message and no way
+   * to retry.
+   */
+  if (error || !stats) {
+    return (
+      <div className="error-state" role="alert">
+        <h2 className="error-state-title">Could not load the dashboard</h2>
+        <p className="error-state-message">
+          {error ?? "The server returned no data."}
+        </p>
+        <div className="error-state-actions">
+          <button className="btn btn-primary" onClick={loadStats}>
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
 
+  /**
+   * Every value guarded.
+   *
+   * These were `stats.totalUsers.toLocaleString()` — four unguarded property
+   * accesses on an untyped response, executed during render. Any missing
+   * field threw a TypeError, and with no error boundary React 19 unmounted
+   * the entire tree: a blank white page immediately after logging in, which a
+   * reload reproduced. The very next block already used `stats.categoryData?.`
+   * correctly, so optional chaining was known and applied inconsistently.
+   */
   const statCards = [
     {
       label: "Total Users",
-      value: stats.totalUsers.toLocaleString(),
+      value: num(stats.totalUsers),
       icon: Users,
       color: "primary",
     },
     {
       label: "Total Expenses",
-      value: `₹${stats.grandTotalExpense.toLocaleString()}`,
+      value: `₹${num(stats.grandTotalExpense)}`,
       icon: IndianRupee,
       color: "danger",
     },
     {
       label: "Active Pools",
-      value: stats.totalPools.toLocaleString(),
+      value: num(stats.totalPools),
       icon: Wallet,
       color: "success",
     },
     {
       label: "Transactions",
-      value: stats.totalTransactions.toLocaleString(),
+      value: num(stats.totalTransactions),
       icon: TrendingUp,
       color: "info",
     },
   ];
 
   // Radar data from categories
-  const radarData =
-    stats.categoryData?.slice(0, 6).map((c: any) => ({
-      subject: c.name,
-      value: c.count,
-      fullMark: Math.max(...stats.categoryData.map((x: any) => x.count)),
-    })) || [];
+  // `Math.max(...[])` is -Infinity, and the inner access re-read a possibly
+  // undefined array. Compute the bound once, from a guaranteed array.
+  const categories = stats.categoryData ?? [];
+  const maxCategoryCount = categories.length
+    ? Math.max(...categories.map((c) => c.count))
+    : 0;
+  const radarData = categories.slice(0, 6).map((c) => ({
+    subject: c.name,
+    value: c.count,
+    fullMark: maxCategoryCount,
+  }));
 
   return (
     <>
@@ -151,9 +196,7 @@ export default function DashboardPage() {
               <div className="stat-info">
                 <div className="stat-label">{card.label}</div>
                 <div className="stat-value">{card.value}</div>
-                <div className="stat-change up">
-                  <ArrowUpRight size={14} /> Active
-                </div>
+                
               </div>
             </motion.div>
           ))}
@@ -290,7 +333,7 @@ export default function DashboardPage() {
                   tick={{ fontSize: 10, fill: "#94A3B8" }}
                   axisLine={false}
                   tickLine={false}
-                  tickFormatter={(v) => v.slice(5)}
+                  tickFormatter={(v) => (typeof v === "string" ? v.slice(5) : String(v ?? ""))}
                 />
                 <YAxis
                   tick={{ fontSize: 12, fill: "#94A3B8" }}

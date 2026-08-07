@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
@@ -9,29 +9,34 @@ import {
   ArrowDownRight,
   Shield,
 } from "lucide-react";
-import { getAdminPoolDetailApi } from "../api/adminApi";
+import { getAdminPoolDetailApi, describeError } from "../api/adminApi";
 
 export default function PoolDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadPoolDetail();
-  }, [id]);
-
-  const loadPoolDetail = async () => {
+  // See UserDetailPage: the effect called a function outside it, listed
+  // incomplete deps, and never reset `loading` on an id change.
+  const reload = useCallback(async () => {
     if (!id) return;
+    setLoading(true);
+    setError(null);
     try {
       const res = await getAdminPoolDetailApi(id);
       setData(res.data);
-    } catch (error) {
-      console.error("Failed to load pool details:", error);
+    } catch (err) {
+      setError(describeError(err));
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
 
   if (loading) {
     return (
@@ -41,7 +46,20 @@ export default function PoolDetailPage() {
     );
   }
 
-  if (!data) return null;
+  // Was `return null` — a completely blank page on any failure, with no
+  // message, no retry, and not even the back button from the success path.
+  if (error || !data) {
+    return (
+      <div className="error-state" role="alert">
+        <h2 className="error-state-title">Could not load this page</h2>
+        <p className="error-state-message">{error ?? "No data was returned."}</p>
+        <div className="error-state-actions">
+          <button className="btn btn-primary" onClick={reload}>Retry</button>
+          <button className="btn btn-outline" onClick={() => navigate(-1)}>Go back</button>
+        </div>
+      </div>
+    );
+  }
 
   const { pool, stats, transactions } = data;
 

@@ -1,8 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Users, Wallet, Activity, XCircle, Database } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { getAllPoolsApi, getPoolDashboardStatsApi } from "../api/adminApi";
+import {
+  getAllPoolsApi,
+  getPoolDashboardStatsApi,
+  describeError,
+} from "../api/adminApi";
 
 export default function PoolsPage() {
   const navigate = useNavigate();
@@ -11,27 +15,52 @@ export default function PoolsPage() {
   const [pagination, setPagination] = useState<any>({});
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadPools();
-  }, [page]);
-
-  const loadPools = async () => {
-    setLoading(true);
+  /**
+   * The aggregate stats are fetched ONCE, not on every page change.
+   *
+   * `loadPools` previously refetched `getPoolDashboardStatsApi()` alongside
+   * each page — and that endpoint executed `PoolTx.find().lean()` with no
+   * filter, projection or limit, loading every pool transaction in the
+   * database into the Node heap. On a 512 MB instance, clicking "Next" ten
+   * times replayed a full-collection scan ten times; it was the most likely
+   * single cause of an out-of-memory restart in the whole system.
+   *
+   * The endpoint now aggregates with `$group` (fixed in the backend), and the
+   * numbers do not change between pages, so fetching them once is both
+   * cheaper and more correct.
+   */
+  const loadStats = useCallback(async () => {
     try {
-      const [poolsRes, statsRes] = await Promise.all([
-        getAllPoolsApi({ page, limit: 20 }),
-        getPoolDashboardStatsApi(),
-      ]);
-      setPools(poolsRes.data.pools);
-      setPagination(poolsRes.data.pagination);
-      setStats(statsRes.data.stats);
-    } catch (error) {
-      console.error("Failed to load pools:", error);
+      const res = await getPoolDashboardStatsApi();
+      setStats(res.data.stats);
+    } catch {
+      // Supplementary: the pool list below is still usable without them.
+    }
+  }, []);
+
+  const loadPools = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await getAllPoolsApi({ page, limit: 20 });
+      setPools(res.data.pools ?? []);
+      setPagination(res.data.pagination);
+    } catch (err) {
+      setError(describeError(err));
     } finally {
       setLoading(false);
     }
-  };
+  }, [page]);
+
+  useEffect(() => {
+    void loadStats();
+  }, [loadStats]);
+
+  useEffect(() => {
+    void loadPools();
+  }, [loadPools]);
 
   return (
     <>
@@ -48,8 +77,19 @@ export default function PoolsPage() {
 
       <div className="page-content">
         {loading ? (
-          <div className="loading-container">
+          <div className="loading-container" aria-busy="true">
             <div className="spinner" />
+            <span className="sr-only">Loading pools</span>
+          </div>
+        ) : error ? (
+          <div className="error-state" role="alert">
+            <h3 className="error-state-title">Could not load pools</h3>
+            <p className="error-state-message">{error}</p>
+            <div className="error-state-actions">
+              <button className="btn btn-primary" onClick={loadPools}>
+                Retry
+              </button>
+            </div>
           </div>
         ) : (
           <>
@@ -76,7 +116,7 @@ export default function PoolsPage() {
                     </div>
                     <span className="stat-title">Active Pools</span>
                   </div>
-                  <div className="stat-value">{stats.activePools}</div>
+                  <div className="stat-value">{stats.activePools ?? 0}</div>
                 </div>
 
                 <div className="stat-card" style={{ minWidth: 200, flex: 1 }}>
@@ -92,7 +132,7 @@ export default function PoolsPage() {
                     </div>
                     <span className="stat-title">Closed Pools</span>
                   </div>
-                  <div className="stat-value">{stats.closedPools}</div>
+                  <div className="stat-value">{stats.closedPools ?? 0}</div>
                 </div>
 
                 <div className="stat-card" style={{ minWidth: 200, flex: 1 }}>

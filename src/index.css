@@ -1,4 +1,15 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap");
+/*
+ * The Google Fonts @import that was here has moved to index.html.
+ *
+ * A CSS `@import` of a remote stylesheet is the slowest possible way to load a
+ * font: the browser must fetch index.css, parse it, THEN discover and fetch
+ * the font CSS, THEN discover and fetch the font files — three sequential
+ * round trips to two origins, all render-blocking, before any styled content
+ * appears. Seven weights were requested; the stylesheet uses four.
+ *
+ * In index.html the request starts during HTML parsing, in parallel with the
+ * CSS, with `preconnect` warming the TLS handshake ahead of it.
+ */
 
 :root {
   /* Primary */
@@ -53,6 +64,35 @@
 
   /* Sidebar */
   --sidebar-width: 260px;
+
+  /**
+   * Aliases for tokens the JSX referenced but :root never defined.
+   *
+   * CSS drops any declaration whose value references an undefined custom
+   * property, so each of these silently fell back to inherited or initial.
+   * Two of the five were substantive, not cosmetic:
+   *
+   *   --surface       The SEND-CONFIRMATION MODAL had `background: var(--surface)`.
+   *                   Undefined meant no background at all: the only gate on
+   *                   broadcasting a push notification to every user rendered
+   *                   as unbounded text floating on the dark overlay.
+   *
+   *   --error         `color: netBalance >= 0 ? var(--success) : var(--error)`
+   *                   on PoolDetailPage. Undefined meant a NEGATIVE pool
+   *                   balance inherited the default text colour — so surplus
+   *                   and deficit looked identical, removing the only visual
+   *                   cue distinguishing a pool in the black from one in the red.
+   *
+   * Defined as aliases rather than new values so there is still one source of
+   * truth per colour. The durable fix is a shared token map imported by both
+   * the CSS and the JSX, so an undefined name becomes a build error instead of
+   * an invisible dialog.
+   */
+  --surface: var(--bg-card);
+  --background: var(--bg-main);
+  --bg-secondary: var(--bg-main);
+  --border-color: var(--border);
+  --error: var(--danger);
 }
 
 * {
@@ -1085,5 +1125,256 @@ tbody tr:last-child td {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Error / empty states
+   ─────────────────────────────────────────────────────────────────────────
+   Added in Phase 4C. Every page previously collapsed "failed" and "no data"
+   into `if (!data) return null`, which rendered NOTHING — no message, no
+   retry, not even the back button that existed in the success path.
+   ───────────────────────────────────────────────────────────────────────── */
+
+.error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--text-secondary);
+  min-height: 240px;
+}
+
+.error-state-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 8px 0 0;
+}
+
+.error-state-message {
+  font-size: 14px;
+  max-width: 420px;
+  margin: 0;
+}
+
+.error-state-detail {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  max-width: 520px;
+  overflow-wrap: anywhere;
+  margin: 4px 0 0;
+}
+
+.error-state-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+/* Visible only to assistive technology. Used for spinner labels and for
+   status text that would otherwise be conveyed by colour or motion alone. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Keyboard focus must always be visible. Nothing in the original stylesheet
+   defined a focus style, so tabbing through the admin panel gave no
+   indication of position beyond the browser default, which several of the
+   custom controls overrode. */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Notifications layout
+   ─────────────────────────────────────────────────────────────────────────
+   Was an INLINE `gridTemplateColumns: "1fr 1fr"` in NotificationsPage, which
+   media queries cannot override — so the compose form and the preview stayed
+   side by side at every width, including 375px.
+   ───────────────────────────────────────────────────────────────────────── */
+.notifications-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Confirm dialog
+   ───────────────────────────────────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.modal-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 24px;
+  width: 100%;
+  max-width: 460px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.modal-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.modal-icon.primary {
+  background: var(--primary-bg);
+  color: var(--primary);
+}
+.modal-icon.danger {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.modal-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.modal-body {
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+.modal-body p {
+  margin: 0 0 10px;
+}
+
+.modal-list {
+  margin: 0 0 10px;
+  padding-left: 20px;
+}
+.modal-list li {
+  margin-bottom: 4px;
+}
+
+.modal-warning {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.modal-confirm-field {
+  margin-top: 16px;
+}
+.modal-confirm-field label {
+  display: block;
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 22px;
+}
+
+.pagination-ellipsis {
+  padding: 0 6px;
+  color: var(--text-tertiary);
+  align-self: center;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Responsive
+   ─────────────────────────────────────────────────────────────────────────
+   The stylesheet had two media queries in 1,089 lines. Data tables had no
+   horizontal scroll container, and the sidebar had a fixed width, so below
+   ~900px the tables overflowed and the whole page scrolled sideways.
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* A table must scroll inside its own container, never push the page wide. */
+.data-table-container {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.data-table-container table {
+  min-width: 640px;
+}
+
+@media (max-width: 900px) {
+  .notifications-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .app-layout {
+    flex-direction: column;
+    height: auto;
+    min-height: 100vh;
+  }
+
+  .sidebar {
+    width: 100%;
+  }
+
+  .sidebar-nav {
+    flex-direction: row;
+    overflow-x: auto;
+    padding: 8px;
+  }
+
+  .nav-link {
+    white-space: nowrap;
+  }
+
+  .page-header,
+  .page-content {
+    padding-left: 16px;
+    padding-right: 16px;
   }
 }

@@ -2,12 +2,47 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Finxxz Admin</title>
+
+    <!--
+      An authenticated admin panel must not be indexed. Netlify sites are
+      crawled by default, so without this the login page ends up in search
+      results — advertising the existence and location of the console.
+    -->
+    <meta name="robots" content="noindex, nofollow, noarchive" />
+    <meta
+      name="description"
+      content="Internal administration console for Finzz."
+    />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <meta name="theme-color" content="#0f172a" />
+
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+    <!--
+      Fonts: moved out of index.css.
+
+      `preconnect` opens the TLS connection to both Google Fonts origins while
+      the HTML is still parsing, so the stylesheet request does not pay for a
+      cold handshake. Only the four weights the stylesheet actually uses are
+      requested (was seven), and `display=swap` renders text in a fallback
+      immediately rather than blocking on the webfont.
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap"
+    />
+
+    <!-- Was "Finxxz Admin" — the product is spelled Finzz everywhere else. -->
+    <title>Finzz Admin</title>
   </head>
   <body>
     <div id="root"></div>
+    <noscript>
+      This admin console requires JavaScript to be enabled.
+    </noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
