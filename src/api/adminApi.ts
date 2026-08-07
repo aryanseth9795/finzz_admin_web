@@ -13,7 +13,7 @@ import axios, { AxiosError } from "axios";
  * Production supplies `VITE_API_BASE` at build time. See `.env.example`.
  */
 const API_BASE =
-  import.meta.env.VITE_API_BASE ?? "https://finzz-backend.onrender.com/api/v1";
+  import.meta.env.VITE_API_BASE ?? "https://finzz-backend.onrender.com/api/v1/admin";
 
 const api = axios.create({
   baseURL: API_BASE,
