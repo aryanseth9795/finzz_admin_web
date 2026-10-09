@@ -6,6 +6,7 @@ import {
   Receipt,
   Wallet,
   Bell,
+  Smartphone,
   LogOut,
 } from "lucide-react";
 import { adminLogoutApi, describeError } from "../api/adminApi";
@@ -17,6 +18,7 @@ const navItems = [
   { to: "/expenses", icon: Receipt, label: "Expenses" },
   { to: "/pools", icon: Wallet, label: "Pools" },
   { to: "/notifications", icon: Bell, label: "Notifications" },
+  { to: "/app-release", icon: Smartphone, label: "App Release" },
 ];
 
 export default function Sidebar() {

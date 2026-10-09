@@ -27,6 +27,7 @@ const ExpensesPage = lazy(() => import("./pages/ExpensesPage"));
 const PoolsPage = lazy(() => import("./pages/PoolsPage"));
 const PoolDetailPage = lazy(() => import("./pages/PoolDetailPage"));
 const NotificationsPage = lazy(() => import("./pages/NotificationsPage"));
+const AppReleasePage = lazy(() => import("./pages/AppReleasePage"));
 
 const RouteFallback = () => (
   <div className="loading-container" aria-busy="true" aria-live="polite">
@@ -185,6 +186,16 @@ function App() {
                 <ErrorBoundary label="notifications">
                   <Suspense fallback={<RouteFallback />}>
                     <NotificationsPage />
+                  </Suspense>
+                </ErrorBoundary>
+              }
+            />
+            <Route
+              path="/app-release"
+              element={
+                <ErrorBoundary label="app release">
+                  <Suspense fallback={<RouteFallback />}>
+                    <AppReleasePage />
                   </Suspense>
                 </ErrorBoundary>
               }

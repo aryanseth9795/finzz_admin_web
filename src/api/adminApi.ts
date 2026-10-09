@@ -268,4 +268,19 @@ export const sendTargetedNotificationApi = (
 ) =>
   api.post<DeliveryResult>("/notifications/targeted", { userIds, title, body });
 
+// ── App release (forced update) ──────────────────────────────────────────
+export interface AppRelease {
+  latestVersion: string;
+  minSupportedVersion: string;
+  apkUrl: string;
+  releaseNotes: string;
+  updatedAt?: string;
+}
+
+export const getAppReleaseApi = () =>
+  api.get<{ success: boolean; release: AppRelease }>("/app-release");
+
+export const updateAppReleaseApi = (payload: Omit<AppRelease, "updatedAt">) =>
+  api.put<{ success: boolean; release: AppRelease }>("/app-release", payload);
+
 export default api;
