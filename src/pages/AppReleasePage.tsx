@@ -180,7 +180,7 @@ export default function AppReleasePage() {
               </p>
             )}
 
-            <button type="submit" className="btn-primary" disabled={saving || !live}>
+            <button type="submit" className="btn btn-primary" disabled={saving || !live}>
               {saving ? "Saving…" : "Save release"}
             </button>
           </form>
