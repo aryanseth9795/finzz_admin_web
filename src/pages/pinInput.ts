@@ -31,3 +31,18 @@ export const formatRetry = (seconds: number): string => {
   const s = Math.max(0, Math.ceil(seconds));
   return s < 60 ? `${s} s` : `${Math.ceil(s / 60)} min`;
 };
+
+/**
+ * Message for a rejected PIN. 0 attempts left means the server is about to
+ * (or already did) lock; show a lockout message instead of "0 attempts left".
+ */
+export const wrongPinMessage = (
+  attemptsLeft?: number,
+  label = "PIN",
+): string => {
+  if (attemptsLeft === undefined) return `Wrong ${label}`;
+  if (attemptsLeft <= 0) return "Too many attempts";
+  return `Wrong ${label} · ${attemptsLeft} ${
+    attemptsLeft === 1 ? "attempt" : "attempts"
+  } left`;
+};

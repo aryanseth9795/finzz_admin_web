@@ -6,6 +6,7 @@ import {
   pinValue,
   isComplete,
   formatRetry,
+  wrongPinMessage,
 } from "./pinInput";
 import { describeLoginError } from "../api/adminApi";
 
@@ -97,6 +98,47 @@ describe("describeLoginError", () => {
     expect(r.retryAfterSeconds).toBe(900);
     expect(r.attemptsLeft).toBeUndefined();
   });
+  it("falls back to the Retry-After header when the body has no seconds", () => {
+    const r = describeLoginError({
+      response: {
+        status: 429,
+        data: { message: "Too many requests" },
+        headers: { "retry-after": "120" },
+      },
+    });
+    expect(r.retryAfterSeconds).toBe(120);
+  });
+  it("falls back to RateLimit-Reset when there is no Retry-After", () => {
+    const r = describeLoginError({
+      response: {
+        status: 429,
+        data: {},
+        headers: { "ratelimit-reset": "45" },
+      },
+    });
+    expect(r.retryAfterSeconds).toBe(45);
+  });
+  it("prefers the body's retryAfterSeconds over headers", () => {
+    const r = describeLoginError({
+      response: {
+        status: 429,
+        data: { retryAfterSeconds: 900 },
+        headers: { "retry-after": "5" },
+      },
+    });
+    expect(r.retryAfterSeconds).toBe(900);
+  });
+  it("reads headers from an AxiosHeaders-like object with get()", () => {
+    const h = { get: (k: string) => (k.toLowerCase() === "retry-after" ? "30" : undefined) };
+    const r = describeLoginError({ response: { status: 429, data: {}, headers: h } });
+    expect(r.retryAfterSeconds).toBe(30);
+  });
+  it("ignores a non-numeric Retry-After header", () => {
+    const r = describeLoginError({
+      response: { status: 429, data: {}, headers: { "retry-after": "soon" } },
+    });
+    expect(r.retryAfterSeconds).toBeUndefined();
+  });
   it("ignores non-numeric attempt/retry fields", () => {
     const r = describeLoginError(
       httpError(429, { message: "x", retryAfterSeconds: "soon" }),
@@ -115,5 +157,18 @@ describe("describeLoginError", () => {
     );
     expect(describeLoginError({ request: {} }).message).toMatch(/reach/i);
     expect(describeLoginError(new Error("x")).message).toMatch(/wrong/i);
+  });
+});
+
+describe("wrongPinMessage", () => {
+  it("shows attempts left with correct pluralisation", () => {
+    expect(wrongPinMessage(3)).toBe("Wrong PIN · 3 attempts left");
+    expect(wrongPinMessage(1)).toBe("Wrong PIN · 1 attempt left");
+  });
+  it("treats 0 attempts left as a lockout, not 'Wrong PIN'", () => {
+    expect(wrongPinMessage(0)).toBe("Too many attempts");
+  });
+  it("falls back to plain 'Wrong PIN' when the count is unknown", () => {
+    expect(wrongPinMessage(undefined)).toBe("Wrong PIN");
   });
 });

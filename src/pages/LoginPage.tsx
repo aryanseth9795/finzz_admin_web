@@ -18,6 +18,7 @@ import {
   isComplete,
   pinValue,
   sanitizePinChar,
+  wrongPinMessage,
 } from "./pinInput";
 
 const EMPTY_CELLS = () => Array<string>(PIN_LENGTH).fill("");
@@ -27,6 +28,9 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [reveal, setReveal] = useState(false);
+  // Legacy fallback: the server still accepts a long secret key.
+  const [useSecret, setUseSecret] = useState(false);
+  const [secret, setSecret] = useState("");
   // Epoch ms at which a server lockout ends; null when not locked out.
   const [lockUntil, setLockUntil] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -65,14 +69,14 @@ export default function LoginPage() {
     return () => clearInterval(id);
   }, [lockUntil, focusCell]);
 
-  const submit = async (pinCells: string[]) => {
-    if (submitting.current || !isComplete(pinCells)) return;
+  const attempt = async (credential: string) => {
+    if (submitting.current) return;
     submitting.current = true;
     setError("");
     setLoading(true);
 
     try {
-      await adminLoginApi(pinValue(pinCells));
+      await adminLoginApi(credential);
       navigate("/", { replace: true });
     } catch (err) {
       // describeLoginError, not describeError: on the login screen a 401 means
@@ -80,6 +84,7 @@ export default function LoginPage() {
       const { message, retryAfterSeconds, attemptsLeft } =
         describeLoginError(err);
       setCells(EMPTY_CELLS());
+      setSecret("");
 
       if (retryAfterSeconds !== undefined) {
         const t = Date.now();
@@ -88,20 +93,24 @@ export default function LoginPage() {
         setError("");
       } else {
         if (attemptsLeft !== undefined) {
+          // attemptsLeft 0 reads as "Too many attempts": the server's lock
+          // (a 429 with a retry time) arrives on the next try.
           setError(
-            `Wrong PIN · ${attemptsLeft} ${
-              attemptsLeft === 1 ? "attempt" : "attempts"
-            } left`,
+            wrongPinMessage(attemptsLeft, useSecret ? "secret key" : "PIN"),
           );
         } else {
           setError(message);
         }
-        setTimeout(() => focusCell(0), 0);
+        if (!useSecret) setTimeout(() => focusCell(0), 0);
       }
     } finally {
       submitting.current = false;
       setLoading(false);
     }
+  };
+
+  const submit = (pinCells: string[]) => {
+    if (isComplete(pinCells)) void attempt(pinValue(pinCells));
   };
 
   const handleChange = (i: number, raw: string) => {
@@ -112,7 +121,7 @@ export default function LoginPage() {
     next[i] = ch;
     setCells(next);
     if (ch) {
-      if (isComplete(next)) void submit(next);
+      if (isComplete(next)) submit(next);
       else focusCell(i + 1);
     }
   };
@@ -135,20 +144,32 @@ export default function LoginPage() {
 
   const handlePaste = (e: ClipboardEvent<HTMLInputElement>) => {
     e.preventDefault();
+    if (loading) return;
     const next = applyPaste(e.clipboardData.getData("text"));
     setCells(next);
-    if (isComplete(next)) void submit(next);
+    if (isComplete(next)) submit(next);
     else focusCell(next.findIndex((c) => !c));
   };
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    void submit(cells);
+    if (useSecret) {
+      if (secret && !locked) void attempt(secret);
+    } else {
+      submit(cells);
+    }
   };
 
-  const shownError = locked
-    ? `Too many attempts. Try again in ${formatRetry(remaining)}`
-    : error;
+  const toggleMode = () => {
+    setUseSecret((u) => !u);
+    setError("");
+    setSecret("");
+    setCells(EMPTY_CELLS());
+  };
+
+  // The alert text is constant while locked, so it is announced once; the
+  // ticking countdown lives outside the alert.
+  const shownError = locked ? "Too many attempts." : error;
   const inputsDisabled = locked;
 
   return (
@@ -173,7 +194,9 @@ export default function LoginPage() {
           animate={{ opacity: 1 }}
           transition={{ delay: 0.3 }}
         >
-          Enter admin PIN
+          <span id="pin-label">
+            {useSecret ? "Enter admin secret key" : "Enter admin PIN"}
+          </span>
         </motion.p>
 
         <form onSubmit={handleSubmit}>
@@ -189,56 +212,88 @@ export default function LoginPage() {
             </motion.p>
           )}
 
-          <motion.div
-            className="pin-row"
-            initial={{ opacity: 0, x: -10 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.4 }}
-          >
-            {cells.map((c, i) => (
-              <input
-                key={i}
-                ref={(el) => {
-                  inputs.current[i] = el;
-                }}
-                id={`pin-${i}`}
-                name={`pin-${i}`}
-                type={reveal ? "text" : "password"}
-                inputMode="text"
-                autoCapitalize="characters"
-                autoCorrect="off"
-                autoComplete={i === 0 ? "one-time-code" : "off"}
-                spellCheck={false}
-                maxLength={1}
-                className={`pin-cell${c ? " pin-cell-filled" : ""}`}
-                aria-label={`PIN character ${i + 1} of ${PIN_LENGTH}`}
-                aria-invalid={Boolean(shownError)}
-                aria-describedby={shownError ? "login-error" : undefined}
-                value={c}
-                disabled={inputsDisabled}
-                readOnly={loading}
-                autoFocus={i === 0}
-                onFocus={(e) => e.currentTarget.select()}
-                onChange={(e) => handleChange(i, e.target.value)}
-                onKeyDown={(e) => handleKeyDown(i, e)}
-                onPaste={handlePaste}
-              />
-            ))}
-            <button
-              type="button"
-              className="pin-toggle"
-              onClick={() => setReveal((r) => !r)}
-              aria-label={reveal ? "Hide PIN" : "Show PIN"}
-              aria-pressed={reveal}
+          {locked && (
+            <p
+              className="login-error"
+              aria-live="off"
+              style={{ marginTop: -8 }}
             >
-              {reveal ? <EyeOff size={18} /> : <Eye size={18} />}
-            </button>
-          </motion.div>
+              Try again in {formatRetry(remaining)}
+            </p>
+          )}
+
+          {useSecret ? (
+            <input
+              id="admin-secret"
+              name="admin-secret"
+              type="password"
+              className="login-input"
+              autoComplete="current-password"
+              aria-labelledby="pin-label"
+              aria-invalid={Boolean(shownError)}
+              aria-describedby={shownError ? "login-error" : undefined}
+              placeholder="Secret key"
+              value={secret}
+              disabled={inputsDisabled}
+              readOnly={loading}
+              autoFocus
+              onChange={(e) => setSecret(e.target.value)}
+            />
+          ) : (
+            <motion.div
+              className="pin-row"
+              role="group"
+              aria-labelledby="pin-label"
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.4 }}
+            >
+              {cells.map((c, i) => (
+                <input
+                  key={i}
+                  ref={(el) => {
+                    inputs.current[i] = el;
+                  }}
+                  id={`pin-${i}`}
+                  name={`pin-${i}`}
+                  type={reveal ? "text" : "password"}
+                  inputMode="text"
+                  autoCapitalize="characters"
+                  autoCorrect="off"
+                  autoComplete={i === 0 ? "one-time-code" : "off"}
+                  spellCheck={false}
+                  className={`pin-cell${c ? " pin-cell-filled" : ""}`}
+                  aria-label={`PIN character ${i + 1} of ${PIN_LENGTH}`}
+                  aria-invalid={Boolean(shownError)}
+                  aria-describedby={shownError ? "login-error" : undefined}
+                  value={c}
+                  disabled={inputsDisabled}
+                  readOnly={loading}
+                  autoFocus={i === 0}
+                  onFocus={(e) => e.currentTarget.select()}
+                  onChange={(e) => handleChange(i, e.target.value)}
+                  onKeyDown={(e) => handleKeyDown(i, e)}
+                  onPaste={handlePaste}
+                />
+              ))}
+              <button
+                type="button"
+                className="pin-toggle"
+                onClick={() => setReveal((r) => !r)}
+                aria-label={reveal ? "Hide PIN" : "Show PIN"}
+                aria-pressed={reveal}
+              >
+                {reveal ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </motion.div>
+          )}
 
           <motion.button
             type="submit"
             className="login-btn"
-            disabled={loading || locked || !isComplete(cells)}
+            disabled={
+              loading || locked || (useSecret ? !secret : !isComplete(cells))
+            }
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.5 }}
@@ -255,6 +310,26 @@ export default function LoginPage() {
             />
             {loading ? "Authenticating..." : "Unlock"}
           </motion.button>
+
+          <button
+            type="button"
+            onClick={toggleMode}
+            disabled={loading}
+            style={{
+              display: "block",
+              margin: "16px auto 0",
+              padding: 0,
+              border: "none",
+              background: "transparent",
+              color: "var(--text-on-dark-secondary)",
+              fontFamily: "inherit",
+              fontSize: 13,
+              textDecoration: "underline",
+              cursor: "pointer",
+            }}
+          >
+            {useSecret ? "Use PIN instead" : "Use secret key instead"}
+          </button>
         </form>
       </motion.div>
     </div>

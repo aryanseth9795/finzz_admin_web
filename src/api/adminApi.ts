@@ -84,6 +84,26 @@ export const describeError = (error: unknown): string => {
  * "Your session expired", which is wrong on the login screen where a 401 means
  * a wrong PIN. 401 carries `attemptsLeft`; 429 carries `retryAfterSeconds`.
  */
+/** Read a response header from a plain object or an AxiosHeaders instance. */
+const readHeader = (headers: unknown, name: string): string | undefined => {
+  if (!headers || typeof headers !== "object") return undefined;
+  const h = headers as {
+    get?: (n: string) => unknown;
+    [k: string]: unknown;
+  };
+  const raw = typeof h.get === "function" ? h.get(name) : h[name.toLowerCase()];
+  return typeof raw === "string" || typeof raw === "number"
+    ? String(raw)
+    : undefined;
+};
+
+/** Seconds from a numeric header value, or undefined. */
+const headerSeconds = (headers: unknown, name: string): number | undefined => {
+  const v = readHeader(headers, name)?.trim();
+  if (!v || !/^\d+(\.\d+)?$/.test(v)) return undefined;
+  return Math.ceil(Number(v));
+};
+
 export const describeLoginError = (
   error: unknown,
 ): { message: string; retryAfterSeconds?: number; attemptsLeft?: number } => {
@@ -106,7 +126,12 @@ export const describeLoginError = (
   if (res?.status === 429) {
     return {
       message: res.data?.message ?? "Too many attempts. Try again later.",
-      retryAfterSeconds: num(res.data?.retryAfterSeconds),
+      // The body wins; the generic authLimiter 429 has no body field, so fall
+      // back to Retry-After, then RateLimit-Reset (both in seconds).
+      retryAfterSeconds:
+        num(res.data?.retryAfterSeconds) ??
+        headerSeconds(res.headers, "retry-after") ??
+        headerSeconds(res.headers, "ratelimit-reset"),
     };
   }
   return { message: describeError(error) };
