@@ -162,6 +162,32 @@ export const adminVerifyApi = () => api.get("/verify");
 export const getDashboardStatsApi = () =>
   api.get<{ success: boolean; stats: DashboardStats }>("/dashboard");
 
+// ── Traffic ──────────────────────────────────────────────────────────────
+export interface TrafficDay {
+  date: string;
+  activeUsers: number;
+  opens: number;
+  requests: number;
+  newUsers: number;
+}
+
+export interface TrafficAnalytics {
+  success: boolean;
+  today: { activeUsers: number; opens: number; requests: number; newUsers: number };
+  totals: { dau: number; wau: number; mau: number; stickiness: number };
+  days: TrafficDay[];
+  topToday: {
+    userId: string;
+    name: string;
+    requests: number;
+    opens: number;
+    lastSeenAt: string;
+  }[];
+}
+
+export const getTrafficAnalyticsApi = (days: number) =>
+  api.get<TrafficAnalytics>("/analytics/traffic", { params: { days } });
+
 // ── Users ────────────────────────────────────────────────────────────────
 export const getAllUsersApi = (params: {
   page?: number;

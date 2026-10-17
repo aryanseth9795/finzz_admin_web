@@ -21,6 +21,7 @@ import { adminVerifyApi, setUnauthorizedHandler } from "./api/adminApi";
  * a round trip to the one screen that must appear instantly.
  */
 const DashboardPage = lazy(() => import("./pages/DashboardPage"));
+const TrafficPage = lazy(() => import("./pages/TrafficPage"));
 const UsersPage = lazy(() => import("./pages/UsersPage"));
 const UserDetailPage = lazy(() => import("./pages/UserDetailPage"));
 const ExpensesPage = lazy(() => import("./pages/ExpensesPage"));
@@ -196,6 +197,16 @@ function App() {
                 <ErrorBoundary label="app release">
                   <Suspense fallback={<RouteFallback />}>
                     <AppReleasePage />
+                  </Suspense>
+                </ErrorBoundary>
+              }
+            />
+            <Route
+              path="/traffic"
+              element={
+                <ErrorBoundary label="traffic">
+                  <Suspense fallback={<RouteFallback />}>
+                    <TrafficPage />
                   </Suspense>
                 </ErrorBoundary>
               }
