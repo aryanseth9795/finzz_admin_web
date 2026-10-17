@@ -29,6 +29,7 @@ import {
   RANGE_OPTIONS,
   pct,
   deltaVsYesterday,
+  maskBeforeTracking,
   shortDate,
   compactNumber,
   relativeTime,
@@ -111,7 +112,12 @@ export default function TrafficPage() {
   const totals = data.totals ?? { dau: 0, wau: 0, mau: 0, stickiness: 0 };
   const days = data.days ?? [];
   const topToday = data.topToday ?? [];
-  const delta = deltaVsYesterday(days);
+  const chartDays = maskBeforeTracking(days, data.trackingSince);
+  const delta = deltaVsYesterday(chartDays);
+  const hasUntracked = chartDays.some((d) => d.activeUsers === null);
+  // From the data actually on screen, not the selected range: a failed switch
+  // keeps the old data and must not relabel it.
+  const rangeBadge = `Last ${days.length} days`;
   const now = new Date();
 
   const statCards = [
@@ -125,12 +131,14 @@ export default function TrafficPage() {
     {
       label: "Opens today",
       value: count(today.opens).toLocaleString("en-IN"),
+      sub: "App launches (cold start)",
       icon: DoorOpen,
       color: "info",
     },
     {
       label: "Requests today",
       value: compactNumber(count(today.requests)),
+      sub: "API requests (excl. admin)",
       icon: Server,
       color: "success",
     },
@@ -197,6 +205,11 @@ export default function TrafficPage() {
         aria-busy={loading}
         style={loading ? { opacity: 0.6, transition: "opacity 0.2s" } : undefined}
       >
+        {hasUntracked && data.trackingSince && (
+          <p className="page-subtitle" style={{ marginBottom: 12 }}>
+            Tracking since {shortDate(data.trackingSince)}
+          </p>
+        )}
         {error && (
           <div className="error-state" role="alert" style={{ marginBottom: 20 }}>
             <p className="error-state-message">{error}</p>
@@ -246,10 +259,10 @@ export default function TrafficPage() {
           <div className="chart-container">
             <div className="chart-header">
               <h3 className="chart-title">Active users &amp; opens</h3>
-              <span className="chart-badge">Last {range} days</span>
+              <span className="chart-badge">{rangeBadge}</span>
             </div>
             <ResponsiveContainer width="100%" height={280}>
-              <AreaChart data={days}>
+              <AreaChart data={chartDays}>
                 <defs>
                   <linearGradient id="trafficActive" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#4F46E5" stopOpacity={0.3} />
@@ -292,7 +305,7 @@ export default function TrafficPage() {
                 <Area
                   type="monotone"
                   dataKey="opens"
-                  name="Opens"
+                  name="App launches (cold start)"
                   stroke="#06B6D4"
                   strokeWidth={3}
                   fill="url(#trafficOpens)"
@@ -305,10 +318,10 @@ export default function TrafficPage() {
           <div className="chart-container">
             <div className="chart-header">
               <h3 className="chart-title">Requests per day</h3>
-              <span className="chart-badge">Last {range} days</span>
+              <span className="chart-badge">{rangeBadge}</span>
             </div>
             <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={days}>
+              <BarChart data={chartDays}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
                 <XAxis
                   dataKey="date"

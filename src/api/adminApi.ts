@@ -176,6 +176,8 @@ export interface TrafficAnalytics {
   today: { activeUsers: number; opens: number; requests: number; newUsers: number };
   totals: { dau: number; wau: number; mau: number; stickiness: number };
   days: TrafficDay[];
+  /** Earliest day with tracked data (YYYY-MM-DD), or null if none yet. */
+  trackingSince: string | null;
   topToday: {
     userId: string;
     name: string;

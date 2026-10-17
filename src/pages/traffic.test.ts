@@ -3,6 +3,7 @@ import {
   RANGE_OPTIONS,
   pct,
   deltaVsYesterday,
+  maskBeforeTracking,
   shortDate,
   compactNumber,
   relativeTime,
@@ -43,23 +44,83 @@ describe("deltaVsYesterday", () => {
   it("reports an increase", () => {
     expect(deltaVsYesterday(d(1, 4, 7))).toEqual({
       value: 3,
-      label: "+3 vs yesterday",
+      label: "+3 vs yesterday (so far today)",
     });
   });
   it("reports a decrease with a true minus sign", () => {
     expect(deltaVsYesterday(d(9, 5, 3))).toEqual({
       value: -2,
-      label: "−2 vs yesterday",
+      label: "−2 vs yesterday (so far today)",
     });
   });
   it("reports no change", () => {
     expect(deltaVsYesterday(d(4, 6, 6))).toEqual({
       value: 0,
-      label: "same as yesterday",
+      label: "same as yesterday (so far today)",
     });
   });
   it("compares only the last two entries", () => {
     expect(deltaVsYesterday(d(100, 2, 3))?.value).toBe(1);
+  });
+  it("is null when either of the last two days is masked (null)", () => {
+    const days = [
+      { date: "2026-10-10", activeUsers: null },
+      { date: "2026-10-11", activeUsers: 4 },
+    ];
+    expect(deltaVsYesterday(days)).toBeNull();
+    expect(
+      deltaVsYesterday([
+        { date: "2026-10-10", activeUsers: 4 },
+        { date: "2026-10-11", activeUsers: null },
+      ]),
+    ).toBeNull();
+  });
+});
+
+describe("maskBeforeTracking", () => {
+  const day = (date: string) => ({
+    date,
+    activeUsers: 3,
+    opens: 5,
+    requests: 100,
+    newUsers: 1,
+  });
+  const days = [day("2026-10-08"), day("2026-10-09"), day("2026-10-10")];
+
+  it("nulls the metrics of days before trackingSince, keeping the date", () => {
+    const out = maskBeforeTracking(days, "2026-10-10");
+    expect(out[0]).toEqual({
+      date: "2026-10-08",
+      activeUsers: null,
+      opens: null,
+      requests: null,
+      newUsers: null,
+    });
+    expect(out[1].activeUsers).toBeNull();
+  });
+  it("keeps the tracking day itself and later days intact", () => {
+    const out = maskBeforeTracking(days, "2026-10-10");
+    expect(out[2]).toEqual(day("2026-10-10"));
+  });
+  it("reads only the date part of a full ISO timestamp", () => {
+    const out = maskBeforeTracking(days, "2026-10-09T00:00:00.000Z");
+    expect(out.map((d) => d.activeUsers)).toEqual([null, 3, 3]);
+  });
+  it("leaves everything alone when trackingSince is null or unparseable", () => {
+    expect(maskBeforeTracking(days, null)).toEqual(days);
+    expect(maskBeforeTracking(days, "garbage")).toEqual(days);
+    expect(maskBeforeTracking(days, undefined)).toEqual(days);
+  });
+  it("masks everything when tracking started after the whole range", () => {
+    const out = maskBeforeTracking(days, "2026-11-01");
+    expect(out.every((d) => d.activeUsers === null)).toBe(true);
+  });
+  it("does not mutate its input", () => {
+    maskBeforeTracking(days, "2026-10-10");
+    expect(days[0].activeUsers).toBe(3);
+  });
+  it("returns an empty array for no days", () => {
+    expect(maskBeforeTracking([], "2026-10-10")).toEqual([]);
   });
 });
 

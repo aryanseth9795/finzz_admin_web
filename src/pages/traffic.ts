@@ -21,15 +21,48 @@ const MONTHS = [
 export const pct = (x: number): string =>
   Number.isFinite(x) ? `${Math.round(x * 100)}%` : "0%";
 
-/** Today (last entry) minus yesterday (the one before). Null if < 2 days. */
+/** The same day shape with every metric nullable (null = not tracked yet). */
+export type Masked<T extends { date: string }> = {
+  [K in keyof T]: K extends "date" ? T[K] : T[K] | null;
+};
+
+/**
+ * Days before `trackingSince` have no real data (counts of 0 would be a lie),
+ * so null out their metrics: recharts then draws a gap instead of a line at 0.
+ * Only the date part of `trackingSince` is read. A null, missing or
+ * unparseable value masks nothing. Pure; returns new objects.
+ */
+export const maskBeforeTracking = <T extends { date: string }>(
+  days: T[],
+  trackingSince: string | null | undefined,
+): Masked<T>[] => {
+  const m = trackingSince ? /^(\d{4}-\d{2}-\d{2})/.exec(trackingSince) : null;
+  const since = m ? m[1] : null;
+  return days.map((d) => {
+    if (since === null || d.date.slice(0, 10) >= since) return d as Masked<T>;
+    const out: Record<string, unknown> = {};
+    for (const key of Object.keys(d)) {
+      out[key] = key === "date" ? d[key as keyof T] : null;
+    }
+    return out as Masked<T>;
+  });
+};
+
+/**
+ * Today (last entry) minus yesterday (the one before). Null if < 2 days or if
+ * either is masked. Today is a partial day, hence "so far today".
+ */
 export const deltaVsYesterday = (
-  days: { date: string; activeUsers: number }[],
+  days: { date: string; activeUsers: number | null }[],
 ): { value: number; label: string } | null => {
   if (days.length < 2) return null;
-  const value = days[days.length - 1].activeUsers - days[days.length - 2].activeUsers;
-  if (value === 0) return { value, label: "same as yesterday" };
+  const today = days[days.length - 1].activeUsers;
+  const yesterday = days[days.length - 2].activeUsers;
+  if (today === null || yesterday === null) return null;
+  const value = today - yesterday;
+  if (value === 0) return { value, label: "same as yesterday (so far today)" };
   const sign = value > 0 ? "+" : "−";
-  return { value, label: `${sign}${Math.abs(value)} vs yesterday` };
+  return { value, label: `${sign}${Math.abs(value)} vs yesterday (so far today)` };
 };
 
 /** "2026-10-17" -> "17 Oct". Fixed English months; no locale. */
