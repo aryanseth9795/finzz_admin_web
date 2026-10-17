@@ -95,7 +95,24 @@ export interface AdminUser {
   friends?: string[];
   pushTokens?: string[];
   pushToken?: string;
+  /** Last device-registration outcome the app reported (POST /users/push-status). */
+  pushStatus?: PushStatus;
   createdAt?: string;
+}
+
+export type PushStatusOutcome =
+  | "registered"
+  | "unchanged"
+  | "permission-denied"
+  | "not-a-device"
+  | "no-project-id"
+  | "token-error"
+  | "upload-error";
+
+export interface PushStatus {
+  outcome: PushStatusOutcome;
+  detail?: string;
+  at: string;
 }
 
 export interface Pagination {
@@ -268,6 +285,8 @@ export interface NotificationHealth {
     lastError?: string;
   };
   hint: string | null;
+  /** Present with `?check=1`: true when Expo could not be reached for some receipts. */
+  checkFailed?: boolean;
 }
 
 /** `check` makes the server poll Expo for fresh receipts before answering. */

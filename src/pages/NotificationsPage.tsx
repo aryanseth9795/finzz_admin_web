@@ -37,6 +37,7 @@ const STATUS_PILL: Record<HealthStatus, { label: string; badge: string }> = {
   degraded: { label: "Degraded", badge: "warning" },
   failing: { label: "Failing", badge: "danger" },
   idle: { label: "No recent sends", badge: "info" },
+  pending: { label: "Waiting for receipts", badge: "info" },
 };
 
 type TargetType = "all" | "selected";
@@ -948,6 +949,19 @@ function HealthPanel({
         </button>
       </div>
 
+      {health?.checkFailed && (
+        <div
+          role="status"
+          style={{
+            marginBottom: 12,
+            fontSize: 13,
+            color: "var(--warning)",
+          }}
+        >
+          Couldn't reach Expo to check receipts — try again
+        </div>
+      )}
+
       {error && (
         <div
           role="alert"
@@ -1060,6 +1074,19 @@ function HealthPanel({
                 </li>
               ))}
             </ul>
+          )}
+
+          {summary.lastError && (
+            <div
+              style={{
+                margin: "0 0 12px",
+                fontSize: 12,
+                color: "var(--text-tertiary)",
+                wordBreak: "break-word",
+              }}
+            >
+              Latest error: <span>{summary.lastError}</span>
+            </div>
           )}
         </>
       )}

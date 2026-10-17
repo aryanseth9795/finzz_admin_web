@@ -10,9 +10,16 @@ import {
   type Pagination as PaginationMeta,
 } from "../api/adminApi";
 import Pagination from "../components/Pagination";
-import { deviceCount } from "./deliveryHealth";
+import { deviceCount, pushStatusLabel, pushStatusTone } from "./deliveryHealth";
 import ConfirmDialog from "../components/ConfirmDialog";
 import toast from "react-hot-toast";
+
+/** Tooltip: the app's own detail text plus when it reported. */
+const pushStatusTitle = (status: NonNullable<AdminUser["pushStatus"]>) => {
+  const when = new Date(status.at);
+  const at = Number.isNaN(when.getTime()) ? "" : when.toLocaleString();
+  return [status.detail, at && `Reported ${at}`].filter(Boolean).join(" — ");
+};
 
 export default function UsersPage() {
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -199,6 +206,15 @@ export default function UsersPage() {
                             </span>
                           ) : (
                             <span className="badge warning">None</span>
+                          )}
+                          {user.pushStatus && (
+                            <span
+                              className={`badge ${pushStatusTone(user.pushStatus.outcome)}`}
+                              style={{ marginLeft: 6 }}
+                              title={pushStatusTitle(user.pushStatus)}
+                            >
+                              {pushStatusLabel(user.pushStatus.outcome)}
+                            </span>
                           )}
                         </td>
                         <td>

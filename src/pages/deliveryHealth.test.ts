@@ -4,6 +4,8 @@ import {
   topErrors,
   healthStatus,
   deviceCount,
+  pushStatusLabel,
+  pushStatusTone,
   type HealthSummary,
 } from "./deliveryHealth";
 
@@ -94,7 +96,7 @@ describe("healthStatus", () => {
 
   it("is failing below 50%", () => {
     expect(healthStatus(summary({ checked: 100, ok: 49 }))).toBe("failing");
-    expect(healthStatus(summary({ checked: 10, ok: 0 }))).toBe("failing");
+    expect(healthStatus(summary({ total: 10, checked: 10, ok: 0 }))).toBe("failing");
   });
 
   it("is failing on any credential error even when the rate looks fine", () => {
@@ -112,14 +114,84 @@ describe("healthStatus", () => {
     ).toBe("healthy");
   });
 
-  it("is not failing merely because nothing has been checked yet", () => {
-    expect(healthStatus(summary({ total: 20, checked: 0, ok: 0 }))).toBe("healthy");
+  it("is pending (not healthy, not failing) when nothing has been checked yet", () => {
+    expect(healthStatus(summary({ total: 20, checked: 0, ok: 0 }))).toBe("pending");
   });
 
-  it("ignores non-credential errors for the status", () => {
+  it("is pending while fewer than 20% of the sends have receipts", () => {
+    expect(healthStatus(summary({ total: 100, checked: 19, ok: 19 }))).toBe("pending");
+    expect(healthStatus(summary({ total: 100, checked: 10, ok: 0 }))).toBe("pending");
+    expect(healthStatus(summary({ total: 100, checked: 20, ok: 20 }))).toBe("healthy");
+  });
+
+  it("still fails on a credential error while receipts are pending", () => {
+    expect(
+      healthStatus(
+        summary({ total: 100, checked: 5, ok: 0, errors: { InvalidCredentials: 5 } }),
+      ),
+    ).toBe("failing");
+  });
+
+  it("ignores other non-credential errors for the status", () => {
+    expect(
+      healthStatus(summary({ checked: 100, ok: 97, errors: { MessageTooBig: 3 } })),
+    ).toBe("healthy");
+  });
+
+  it("does not count uninstalled devices (DeviceNotRegistered) as failures", () => {
     expect(
       healthStatus(summary({ checked: 100, ok: 97, errors: { DeviceNotRegistered: 3 } })),
     ).toBe("healthy");
+    // 40 uninstalls would be 60% by naive ok/checked; excluded it is 60/60.
+    expect(
+      healthStatus(summary({ checked: 100, ok: 60, errors: { DeviceNotRegistered: 40 } })),
+    ).not.toBe("failing");
+  });
+
+  it("caps DeviceNotRegistered at degraded, however many there are", () => {
+    expect(
+      healthStatus(summary({ checked: 100, ok: 0, errors: { DeviceNotRegistered: 100 } })),
+    ).toBe("degraded");
+    expect(
+      healthStatus(summary({ checked: 100, ok: 80, errors: { DeviceNotRegistered: 20 } })),
+    ).toBe("degraded");
+  });
+
+  it("still fails when real failures remain after excluding uninstalls", () => {
+    expect(
+      healthStatus(
+        summary({ checked: 100, ok: 20, errors: { DeviceNotRegistered: 10, MessageTooBig: 70 } }),
+      ),
+    ).toBe("failing");
+  });
+});
+
+describe("pushStatusLabel", () => {
+  it("gives human text for every outcome the server stores", () => {
+    expect(pushStatusLabel("registered")).toBe("Notifications on");
+    expect(pushStatusLabel("unchanged")).toBe("Notifications on");
+    expect(pushStatusLabel("permission-denied")).toBe("Notifications blocked on phone");
+    expect(pushStatusLabel("not-a-device")).toBe("Not a physical device");
+    expect(pushStatusLabel("no-project-id")).toBe("App build is missing its Expo project ID");
+    expect(pushStatusLabel("token-error")).toBe("Couldn't get a push token");
+    expect(pushStatusLabel("upload-error")).toBe("Couldn't register the token with the server");
+  });
+
+  it("falls back to the raw outcome for unknown values", () => {
+    expect(pushStatusLabel("brand-new")).toBe("brand-new");
+  });
+});
+
+describe("pushStatusTone", () => {
+  it("maps outcomes to a badge tone", () => {
+    expect(pushStatusTone("registered")).toBe("success");
+    expect(pushStatusTone("unchanged")).toBe("success");
+    expect(pushStatusTone("permission-denied")).toBe("warning");
+    expect(pushStatusTone("not-a-device")).toBe("warning");
+    expect(pushStatusTone("token-error")).toBe("danger");
+    expect(pushStatusTone("upload-error")).toBe("danger");
+    expect(pushStatusTone("no-project-id")).toBe("danger");
+    expect(pushStatusTone("brand-new")).toBe("info");
   });
 });
 
