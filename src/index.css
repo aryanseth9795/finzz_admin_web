@@ -1378,3 +1378,80 @@ tbody tr:last-child td {
     padding-right: 16px;
   }
 }
+
+/* ====================== */
+/* PIN entry (login)       */
+/* ====================== */
+.pin-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.pin-cell {
+  width: 46px;
+  height: 54px;
+  padding: 0;
+  text-align: center;
+  font-size: 22px;
+  font-weight: 700;
+  font-family: inherit;
+  text-transform: uppercase;
+  color: var(--text-on-dark);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.04);
+  outline: none;
+  transition: all 0.2s;
+}
+
+.pin-cell-filled {
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.pin-cell:focus {
+  border-color: var(--primary-light);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.2);
+}
+
+.pin-cell[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+.pin-cell:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pin-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 54px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-on-dark-secondary);
+  cursor: pointer;
+}
+
+.pin-toggle:hover {
+  color: var(--text-on-dark);
+}
+
+@media (max-width: 420px) {
+  .pin-row {
+    gap: 5px;
+  }
+  .pin-cell {
+    width: 38px;
+    height: 48px;
+    font-size: 20px;
+  }
+  .pin-toggle {
+    width: 28px;
+  }
+}

@@ -79,6 +79,39 @@ export const describeError = (error: unknown): string => {
   return "Something went wrong. Please try again.";
 };
 
+/**
+ * Login-specific error description. `describeError` maps every 401 to
+ * "Your session expired", which is wrong on the login screen where a 401 means
+ * a wrong PIN. 401 carries `attemptsLeft`; 429 carries `retryAfterSeconds`.
+ */
+export const describeLoginError = (
+  error: unknown,
+): { message: string; retryAfterSeconds?: number; attemptsLeft?: number } => {
+  const res = (
+    error as AxiosError<{
+      message?: string;
+      attemptsLeft?: unknown;
+      retryAfterSeconds?: unknown;
+    }>
+  )?.response;
+  const num = (v: unknown) =>
+    typeof v === "number" && Number.isFinite(v) ? v : undefined;
+
+  if (res?.status === 401) {
+    return {
+      message: res.data?.message ?? "Wrong PIN",
+      attemptsLeft: num(res.data?.attemptsLeft),
+    };
+  }
+  if (res?.status === 429) {
+    return {
+      message: res.data?.message ?? "Too many attempts. Try again later.",
+      retryAfterSeconds: num(res.data?.retryAfterSeconds),
+    };
+  }
+  return { message: describeError(error) };
+};
+
 // ── Types ────────────────────────────────────────────────────────────────
 //
 // The repo had no interface describing an API response anywhere: every page
