@@ -10,6 +10,7 @@ import {
   type Pagination as PaginationMeta,
 } from "../api/adminApi";
 import Pagination from "../components/Pagination";
+import { deviceCount } from "./deliveryHealth";
 import ConfirmDialog from "../components/ConfirmDialog";
 import toast from "react-hot-toast";
 
@@ -191,8 +192,11 @@ export default function UsersPage() {
                         <td>{user.phone}</td>
                         <td>{user.friends?.length || 0}</td>
                         <td>
-                          {user.pushToken ? (
-                            <span className="badge success">Active</span>
+                          {deviceCount(user) > 0 ? (
+                            <span className="badge success">
+                              {deviceCount(user)}{" "}
+                              {deviceCount(user) === 1 ? "device" : "devices"}
+                            </span>
                           ) : (
                             <span className="badge warning">None</span>
                           )}

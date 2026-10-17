@@ -258,6 +258,24 @@ export interface DeliveryResult {
   sentCount?: number;
 }
 
+export interface NotificationHealth {
+  success: boolean;
+  last24h: {
+    total: number;
+    checked: number;
+    ok: number;
+    errors: Record<string, number>;
+    lastError?: string;
+  };
+  hint: string | null;
+}
+
+/** `check` makes the server poll Expo for fresh receipts before answering. */
+export const getNotificationHealthApi = (check?: boolean) =>
+  api.get<NotificationHealth>("/notifications/health", {
+    params: check ? { check: 1 } : undefined,
+  });
+
 export const sendBulkNotificationApi = (title: string, body: string) =>
   api.post<DeliveryResult>("/notifications/bulk", { title, body });
 

@@ -9,16 +9,35 @@ import {
   Users,
   User,
   Smile,
+  Activity,
+  RefreshCw,
+  AlertTriangle,
 } from "lucide-react";
 import EmojiPicker from "emoji-picker-react";
 import {
   sendBulkNotificationApi,
   sendTargetedNotificationApi,
   getAllUsersApi,
+  getNotificationHealthApi,
   describeError,
   type DeliveryResult,
+  type NotificationHealth,
 } from "../api/adminApi";
 import toast from "react-hot-toast";
+import {
+  deliveryRate,
+  topErrors,
+  healthStatus,
+  deviceCount,
+  type HealthStatus,
+} from "./deliveryHealth";
+
+const STATUS_PILL: Record<HealthStatus, { label: string; badge: string }> = {
+  healthy: { label: "Healthy", badge: "success" },
+  degraded: { label: "Degraded", badge: "warning" },
+  failing: { label: "Failing", badge: "danger" },
+  idle: { label: "No recent sends", badge: "info" },
+};
 
 type TargetType = "all" | "selected";
 
@@ -27,10 +46,32 @@ interface UserType {
   name: string;
   phone: string;
   avatar?: string;
+  pushTokens?: string[];
   pushToken?: string;
 }
 
 export default function NotificationsPage() {
+  const [health, setHealth] = useState<NotificationHealth | null>(null);
+  const [healthLoading, setHealthLoading] = useState(true);
+  const [healthError, setHealthError] = useState<string | null>(null);
+
+  const loadHealth = useCallback(async (check = false) => {
+    setHealthLoading(true);
+    setHealthError(null);
+    try {
+      const res = await getNotificationHealthApi(check);
+      setHealth(res.data);
+    } catch (error) {
+      setHealthError(describeError(error));
+    } finally {
+      setHealthLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadHealth();
+  }, [loadHealth]);
+
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [loading, setLoading] = useState(false);
@@ -149,17 +190,20 @@ export default function NotificationsPage() {
 
       const { accepted = 0, rejected = 0, skipped = 0 } = res.data;
 
+      // "Accepted" means Expo queued the message, not that a phone received
+      // it. The Delivery health panel shows what happened afterwards.
       if (accepted === 0) {
-        toast.error("No devices accepted the notification.");
+        toast.error("Expo did not accept any notifications.");
       } else if (rejected > 0 || skipped > 0) {
         toast.success(
-          `Delivered to ${accepted} device(s). ${rejected} rejected, ${skipped} had no push token.`,
+          `Queued ${accepted} notification(s) at Expo. ${rejected} rejected, ${skipped} had no push token.`,
         );
       } else {
-        toast.success(`Delivered to ${accepted} device(s).`);
+        toast.success(`Queued ${accepted} notification(s) at Expo.`);
       }
 
       setLastResult({ ...res.data, targetType });
+      loadHealth();
       setTitle("");
       setBody("");
       if (targetType === "selected") {
@@ -483,7 +527,7 @@ export default function NotificationsPage() {
                                   gap: 8,
                                 }}
                               >
-                                {!user.pushToken && (
+                                {deviceCount(user) === 0 && (
                                   <span
                                     style={{
                                       fontSize: 11,
@@ -664,6 +708,15 @@ export default function NotificationsPage() {
             onClick={() => setShowEmojiPicker(null)}
           >
             <div className="card" style={{ marginBottom: 16 }}>
+              <HealthPanel
+                health={health}
+                loading={healthLoading}
+                error={healthError}
+                onReload={loadHealth}
+              />
+            </div>
+
+            <div className="card" style={{ marginBottom: 16 }}>
               <h3 className="card-title">
                 <Smartphone
                   size={18}
@@ -842,5 +895,194 @@ export default function NotificationsPage() {
         )}
       </AnimatePresence>
     </>
+  );
+}
+
+function HealthPanel({
+  health,
+  loading,
+  error,
+  onReload,
+}: {
+  health: NotificationHealth | null;
+  loading: boolean;
+  error: string | null;
+  onReload: (check?: boolean) => void;
+}) {
+  const summary = health?.last24h;
+  const status = summary ? healthStatus(summary) : null;
+  const rate = summary ? deliveryRate(summary) : null;
+  const errors = summary ? topErrors(summary.errors) : [];
+
+  return (
+    <div aria-busy={loading}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 8,
+          marginBottom: 12,
+        }}
+      >
+        <h3 className="card-title" style={{ margin: 0 }}>
+          <Activity
+            size={18}
+            style={{
+              display: "inline",
+              verticalAlign: "middle",
+              marginRight: 8,
+            }}
+          />
+          Delivery health
+        </h3>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={() => onReload(true)}
+          disabled={loading}
+          style={{ padding: "6px 12px", fontSize: 13 }}
+        >
+          <RefreshCw size={14} />
+          {loading ? "Checking..." : "Check now"}
+        </button>
+      </div>
+
+      {error && (
+        <div
+          role="alert"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 8,
+            padding: 12,
+            borderRadius: "var(--radius-md)",
+            background: "var(--danger-bg)",
+            color: "var(--danger)",
+            fontSize: 13,
+          }}
+        >
+          <span>{error}</span>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => onReload()}
+            disabled={loading}
+            style={{ padding: "4px 10px", fontSize: 12 }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
+      {!error && !summary && loading && (
+        <div style={{ color: "var(--text-secondary)", fontSize: 13 }}>
+          Loading...
+        </div>
+      )}
+
+      {summary && status && (
+        <>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              marginBottom: 12,
+            }}
+          >
+            <span className={`badge ${STATUS_PILL[status].badge}`}>
+              {STATUS_PILL[status].label}
+            </span>
+            <span
+              style={{ fontSize: 13, color: "var(--text-secondary)" }}
+              title="Delivered / checked, last 24 hours"
+            >
+              {rate === null
+                ? "Delivery rate: not checked yet"
+                : `Delivery rate: ${Math.round(rate * 100)}%`}
+            </span>
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(3, 1fr)",
+              gap: 8,
+              marginBottom: 12,
+              textAlign: "center",
+            }}
+          >
+            {[
+              { label: "Sent", value: summary.total },
+              { label: "Checked", value: summary.checked },
+              { label: "Delivered", value: summary.ok },
+            ].map((c) => (
+              <div
+                key={c.label}
+                style={{
+                  padding: 8,
+                  borderRadius: "var(--radius-md)",
+                  border: "1px solid var(--border-color)",
+                }}
+              >
+                <div style={{ fontSize: 18, fontWeight: 700 }}>{c.value}</div>
+                <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
+                  {c.label} (24h)
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {errors.length > 0 && (
+            <ul
+              style={{
+                listStyle: "none",
+                margin: "0 0 12px",
+                padding: 0,
+                fontSize: 13,
+              }}
+            >
+              {errors.map((e) => (
+                <li
+                  key={e.code}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 8,
+                    padding: "4px 0",
+                    color: "var(--text-secondary)",
+                  }}
+                >
+                  <span title={e.code}>{e.label}</span>
+                  <strong>{e.count}</strong>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+
+      {health?.hint && (
+        <div
+          role="note"
+          style={{
+            display: "flex",
+            gap: 8,
+            padding: 12,
+            borderRadius: "var(--radius-md)",
+            background: "var(--warning-bg)",
+            color: "var(--warning)",
+            fontSize: 13,
+            lineHeight: 1.5,
+          }}
+        >
+          <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: 2 }} />
+          {/* Rendered as a text node: the hint comes from the server. */}
+          <span>{health.hint}</span>
+        </div>
+      )}
+    </div>
   );
 }
