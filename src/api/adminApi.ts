@@ -79,6 +79,64 @@ export const describeError = (error: unknown): string => {
   return "Something went wrong. Please try again.";
 };
 
+/**
+ * Login-specific error description. `describeError` maps every 401 to
+ * "Your session expired", which is wrong on the login screen where a 401 means
+ * a wrong PIN. 401 carries `attemptsLeft`; 429 carries `retryAfterSeconds`.
+ */
+/** Read a response header from a plain object or an AxiosHeaders instance. */
+const readHeader = (headers: unknown, name: string): string | undefined => {
+  if (!headers || typeof headers !== "object") return undefined;
+  const h = headers as {
+    get?: (n: string) => unknown;
+    [k: string]: unknown;
+  };
+  const raw = typeof h.get === "function" ? h.get(name) : h[name.toLowerCase()];
+  return typeof raw === "string" || typeof raw === "number"
+    ? String(raw)
+    : undefined;
+};
+
+/** Seconds from a numeric header value, or undefined. */
+const headerSeconds = (headers: unknown, name: string): number | undefined => {
+  const v = readHeader(headers, name)?.trim();
+  if (!v || !/^\d+(\.\d+)?$/.test(v)) return undefined;
+  return Math.ceil(Number(v));
+};
+
+export const describeLoginError = (
+  error: unknown,
+): { message: string; retryAfterSeconds?: number; attemptsLeft?: number } => {
+  const res = (
+    error as AxiosError<{
+      message?: string;
+      attemptsLeft?: unknown;
+      retryAfterSeconds?: unknown;
+    }>
+  )?.response;
+  const num = (v: unknown) =>
+    typeof v === "number" && Number.isFinite(v) ? v : undefined;
+
+  if (res?.status === 401) {
+    return {
+      message: res.data?.message ?? "Wrong PIN",
+      attemptsLeft: num(res.data?.attemptsLeft),
+    };
+  }
+  if (res?.status === 429) {
+    return {
+      message: res.data?.message ?? "Too many attempts. Try again later.",
+      // The body wins; the generic authLimiter 429 has no body field, so fall
+      // back to Retry-After, then RateLimit-Reset (both in seconds).
+      retryAfterSeconds:
+        num(res.data?.retryAfterSeconds) ??
+        headerSeconds(res.headers, "retry-after") ??
+        headerSeconds(res.headers, "ratelimit-reset"),
+    };
+  }
+  return { message: describeError(error) };
+};
+
 // ── Types ────────────────────────────────────────────────────────────────
 //
 // The repo had no interface describing an API response anywhere: every page
@@ -95,7 +153,24 @@ export interface AdminUser {
   friends?: string[];
   pushTokens?: string[];
   pushToken?: string;
+  /** Last device-registration outcome the app reported (POST /users/push-status). */
+  pushStatus?: PushStatus;
   createdAt?: string;
+}
+
+export type PushStatusOutcome =
+  | "registered"
+  | "unchanged"
+  | "permission-denied"
+  | "not-a-device"
+  | "no-project-id"
+  | "token-error"
+  | "upload-error";
+
+export interface PushStatus {
+  outcome: PushStatusOutcome;
+  detail?: string;
+  at: string;
 }
 
 export interface Pagination {
@@ -161,6 +236,34 @@ export const adminVerifyApi = () => api.get("/verify");
 // ── Dashboard ────────────────────────────────────────────────────────────
 export const getDashboardStatsApi = () =>
   api.get<{ success: boolean; stats: DashboardStats }>("/dashboard");
+
+// ── Traffic ──────────────────────────────────────────────────────────────
+export interface TrafficDay {
+  date: string;
+  activeUsers: number;
+  opens: number;
+  requests: number;
+  newUsers: number;
+}
+
+export interface TrafficAnalytics {
+  success: boolean;
+  today: { activeUsers: number; opens: number; requests: number; newUsers: number };
+  totals: { dau: number; wau: number; mau: number; stickiness: number };
+  days: TrafficDay[];
+  /** Earliest day with tracked data (YYYY-MM-DD), or null if none yet. */
+  trackingSince: string | null;
+  topToday: {
+    userId: string;
+    name: string;
+    requests: number;
+    opens: number;
+    lastSeenAt: string;
+  }[];
+}
+
+export const getTrafficAnalyticsApi = (days: number) =>
+  api.get<TrafficAnalytics>("/analytics/traffic", { params: { days } });
 
 // ── Users ────────────────────────────────────────────────────────────────
 export const getAllUsersApi = (params: {
@@ -257,6 +360,26 @@ export interface DeliveryResult {
   /** @deprecated server alias for `accepted`, kept for older builds. */
   sentCount?: number;
 }
+
+export interface NotificationHealth {
+  success: boolean;
+  last24h: {
+    total: number;
+    checked: number;
+    ok: number;
+    errors: Record<string, number>;
+    lastError?: string;
+  };
+  hint: string | null;
+  /** Present with `?check=1`: true when Expo could not be reached for some receipts. */
+  checkFailed?: boolean;
+}
+
+/** `check` makes the server poll Expo for fresh receipts before answering. */
+export const getNotificationHealthApi = (check?: boolean) =>
+  api.get<NotificationHealth>("/notifications/health", {
+    params: check ? { check: 1 } : undefined,
+  });
 
 export const sendBulkNotificationApi = (title: string, body: string) =>
   api.post<DeliveryResult>("/notifications/bulk", { title, body });

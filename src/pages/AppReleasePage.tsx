@@ -131,7 +131,7 @@ export default function AppReleasePage() {
               <input
                 id="rel-latest"
                 className="form-input"
-                placeholder="1.1.0"
+                placeholder="e.g. 1.1.0"
                 value={form.latestVersion}
                 onChange={(e) => set("latestVersion")(e.target.value)}
               />
@@ -143,7 +143,7 @@ export default function AppReleasePage() {
               <input
                 id="rel-min"
                 className="form-input"
-                placeholder="1.1.0"
+                placeholder="e.g. 1.1.0"
                 value={form.minSupportedVersion}
                 onChange={(e) => set("minSupportedVersion")(e.target.value)}
               />
@@ -180,7 +180,7 @@ export default function AppReleasePage() {
               </p>
             )}
 
-            <button type="submit" className="btn-primary" disabled={saving || !live}>
+            <button type="submit" className="btn btn-primary" disabled={saving || !live}>
               {saving ? "Saving…" : "Save release"}
             </button>
           </form>

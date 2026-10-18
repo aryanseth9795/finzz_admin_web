@@ -2,6 +2,7 @@ import { useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
+  Activity,
   Users,
   Receipt,
   Wallet,
@@ -14,6 +15,7 @@ import toast from "react-hot-toast";
 
 const navItems = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard" },
+  { to: "/traffic", icon: Activity, label: "Traffic" },
   { to: "/users", icon: Users, label: "Users" },
   { to: "/expenses", icon: Receipt, label: "Expenses" },
   { to: "/pools", icon: Wallet, label: "Pools" },
