@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   BarChart,
@@ -36,7 +36,7 @@ import {
   isCredit,
   formatExpenseDate,
   dailyDebitTotals,
-  categoryDebitTotals,
+  categoryPieData as pieDataFor,
 } from "./expenseReport";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -97,7 +97,13 @@ export default function ExpensesPage() {
 
   const dateRangeInvalid = Boolean(startDate && endDate && startDate > endDate);
 
+  // Only the latest request may update the page; an older one that resolves
+  // late (e.g. after the range was inverted) is ignored.
+  const requestSeq = useRef(0);
+
   const loadExpenses = useCallback(async () => {
+    const seq = ++requestSeq.current;
+    const isLatest = () => seq === requestSeq.current;
     setError(null);
     // An inverted range can only return nothing; say so instead of asking.
     if (startDate && endDate && startDate > endDate) {
@@ -116,6 +122,7 @@ export default function ExpensesPage() {
         ...(endDate ? { endDate } : {}),
         ...(selectedUser ? { userId: selectedUser } : {}),
       });
+      if (!isLatest()) return;
       setExpenses(res.data.expenses ?? []);
       setPagination(res.data.pagination);
       // Server-computed totals over the WHOLE filtered set — see the PDF
@@ -124,9 +131,9 @@ export default function ExpensesPage() {
     } catch (err) {
       // Was `console.error` alone, so a failed request rendered as an empty
       // table indistinguishable from "no expenses match".
-      setError(describeError(err));
+      if (isLatest()) setError(describeError(err));
     } finally {
-      setLoading(false);
+      if (isLatest()) setLoading(false);
     }
   }, [page, startDate, endDate, selectedUser]);
 
@@ -232,16 +239,10 @@ export default function ExpensesPage() {
     loadExpenses();
   }, [loadExpenses]);
 
-  // Pie: the server's whole-filter breakdown when it sends one, else the
-  // debits on this page. The server's is debits-only once it splits credits.
-  const serverCategories = totals?.byCategory ?? [];
-  const pieIsWholeFilter = serverCategories.length > 0;
-  const categoryPieData = pieIsWholeFilter
-    ? serverCategories.map((c) => ({
-        name: c.name || "Uncategorised",
-        value: c.total,
-      }))
-    : categoryDebitTotals(expenses);
+  // Pie: the server's whole-filter breakdown only when it splits credits,
+  // else the debits on this page (see categoryPieData).
+  const { wholeFilter: pieIsWholeFilter, data: categoryPieData } =
+    pieDataFor(totals, expenses);
 
   // Bars: debits on this page, one bar per UTC day, oldest first.
   const dailyBarData = dailyDebitTotals(expenses);

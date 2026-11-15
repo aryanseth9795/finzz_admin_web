@@ -321,7 +321,8 @@ export interface UserDetailResponse {
    * exist, so the type keeps the possibility visible.
    */
   user: Omit<AdminUser, "friends"> & { friends?: (AdminUser | null)[] };
-  expenseSummary: { totalAmount: number; count: number };
+  /** `totalAmount` is debits only on servers that send `totalCredits`. */
+  expenseSummary: { totalAmount: number; count: number; totalCredits?: number };
   /**
    * Was always `[]` because the server queried `createdBy` and
    * `members.userId`, neither of which exists on the Pool schema — so the

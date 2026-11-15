@@ -9,6 +9,7 @@ import {
   formatExpenseDate,
   dailyDebitTotals,
   categoryDebitTotals,
+  categoryPieData,
   pageCredits,
 } from "./expenseReport";
 
@@ -93,7 +94,7 @@ describe("ADM-003 — the PDF that misstated financial totals", () => {
 describe("The two totals are never conflated", () => {
   it("reports the server's aggregate as the filter total", () => {
     expect(describeFilterTotal({ totalAmount: 52300, count: 523 })).toBe(
-      "Filter total: 52,300.00  across 523 transaction(s)",
+      "Filter total (debits + credits): 52,300.00  across 523 transaction(s)",
     );
   });
 
@@ -272,7 +273,56 @@ describe("describeFilterTotal — with server credit totals", () => {
 
   it("keeps the old sentence against a server without credit totals", () => {
     expect(describeFilterTotal({ totalAmount: 100, count: 4 })).toBe(
-      "Filter total: 100.00  across 4 transaction(s)",
+      "Filter total (debits + credits): 100.00  across 4 transaction(s)",
     );
+  });
+});
+
+describe("categoryPieData — which breakdown the pie uses", () => {
+  const rows = [
+    { amount: 300, category: "Food", type: "debit" as const },
+    { amount: 50000, category: "Salary", type: "credit" as const },
+  ];
+  const mixed = [
+    { name: "Salary", total: 50000, count: 1 },
+    { name: "Food", total: 300, count: 1 },
+  ];
+
+  it("ignores byCategory from a server that does not split credits", () => {
+    // The live server's byCategory sums credits in, so a Salary credit
+    // would show as spending under "whole filter".
+    const pie = categoryPieData({ totalAmount: 50300, count: 2, byCategory: mixed }, rows);
+    expect(pie.wholeFilter).toBe(false);
+    expect(pie.data).toEqual([{ name: "Food", value: 300 }]);
+  });
+
+  it("uses the server breakdown once it reports totalCredits", () => {
+    const pie = categoryPieData(
+      {
+        totalAmount: 300,
+        totalCredits: 50000,
+        count: 2,
+        byCategory: [{ name: "Food", total: 300, count: 1 }, { name: "", total: 5, count: 1 }],
+      },
+      rows,
+    );
+    expect(pie.wholeFilter).toBe(true);
+    expect(pie.data).toEqual([
+      { name: "Food", value: 300 },
+      { name: "Uncategorised", value: 5 },
+    ]);
+  });
+
+  it("falls back to this page when the split server sends no categories", () => {
+    const pie = categoryPieData({ totalAmount: 0, totalCredits: 0, count: 0, byCategory: [] }, rows);
+    expect(pie.wholeFilter).toBe(false);
+    expect(pie.data).toEqual([{ name: "Food", value: 300 }]);
+  });
+
+  it("falls back to this page when totals are missing", () => {
+    expect(categoryPieData(null, rows)).toEqual({
+      wholeFilter: false,
+      data: [{ name: "Food", value: 300 }],
+    });
   });
 });

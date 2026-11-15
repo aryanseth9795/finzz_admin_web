@@ -53,8 +53,9 @@ export const describeTableScope = (
 export const describeFilterTotal = (totals: ExpenseTotals | null): string => {
   if (!totals) return "Filter total: unavailable";
   // Older servers send one undivided total; keep the old sentence for them.
+  // Their total includes credits, so say so beside a debits-only page total.
   if (typeof totals.totalCredits !== "number") {
-    return `Filter total: ${formatAmount(totals.totalAmount)}  across ${totals.count} transaction(s)`;
+    return `Filter total (debits + credits): ${formatAmount(totals.totalAmount)}  across ${totals.count} transaction(s)`;
   }
   const spent =
     typeof totals.debitCount === "number"
@@ -142,7 +143,29 @@ export const categoryDebitTotals = (
     .sort((a, b) => b.value - a.value);
 };
 
-export const describePeriod = (startDate: string, endDate: string): string =>
+/**
+ * The pie's data. The server's whole-filter `byCategory` is used only when the
+ * server also sends `totalCredits`: older servers sum credits into it, which
+ * would show income (e.g. Salary) as spending. Otherwise: debits on this page.
+ */
+export const categoryPieData = (
+  totals: ExpenseTotals | null,
+  rows: ExpenseRow[],
+): { wholeFilter: boolean; data: { name: string; value: number }[] } => {
+  const server = totals?.byCategory ?? [];
+  if (typeof totals?.totalCredits === "number" && server.length > 0) {
+    return {
+      wholeFilter: true,
+      data: server.map((c) => ({
+        name: c.name || "Uncategorised",
+        value: c.total,
+      })),
+    };
+  }
+  return { wholeFilter: false, data: categoryDebitTotals(rows) };
+};
+
+export const describePeriod =(startDate: string, endDate: string): string =>
   startDate || endDate
     ? `Period: ${startDate || "earliest"} to ${endDate || "today"}`
     : "Period: All time";
