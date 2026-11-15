@@ -32,6 +32,11 @@ import {
   describeFilterTotal,
   describePeriod,
   pageTotal,
+  pageCredits,
+  isCredit,
+  formatExpenseDate,
+  dailyDebitTotals,
+  categoryDebitTotals,
 } from "./expenseReport";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -77,7 +82,8 @@ export default function ExpensesPage() {
    */
   useEffect(() => {
     let cancelled = false;
-    getAllUsersApi({ limit: 200, sort: "name" })
+    // The server's /admin/users schema caps `limit` at 100; 200 was a 400.
+    getAllUsersApi({ limit: 100, sort: "name" })
       .then((res) => {
         if (!cancelled) setUsers(res.data.users ?? []);
       })
@@ -89,9 +95,19 @@ export default function ExpensesPage() {
     };
   }, []);
 
+  const dateRangeInvalid = Boolean(startDate && endDate && startDate > endDate);
+
   const loadExpenses = useCallback(async () => {
-    setLoading(true);
     setError(null);
+    // An inverted range can only return nothing; say so instead of asking.
+    if (startDate && endDate && startDate > endDate) {
+      setExpenses([]);
+      setPagination(null);
+      setTotals(null);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
     try {
       const res = await getAllExpensesApi({
         page,
@@ -177,18 +193,19 @@ export default function ExpensesPage() {
     // the range arithmetic is the part that was wrong.
     line(describeTableScope(page, expenses.length, pagination));
 
-    const printedTotal = pageTotal(expenses);
+    const printedSpent = pageTotal(expenses);
+    const printedReceived = pageCredits(expenses);
 
     autoTable(doc, {
       startY: yPos + 4,
-      head: [["Date", "User", "Category", "Remarks", "Amount (INR)"]],
+      head: [["Date", "User", "Type", "Category", "Remarks", "Amount (INR)"]],
       body: expenses.map((exp) => [
-        // Explicit locale: an unqualified toLocaleDateString produced a
-        // different format on every machine, inside an exported document.
-        new Date(exp.date).toLocaleDateString("en-IN"),
+        // Explicit locale and UTC: expenses are stored at UTC midnight.
+        formatExpenseDate(exp.date),
         typeof exp.userId === "object" && exp.userId
           ? (exp.userId.name ?? "—")
           : "—",
+        isCredit(exp) ? "Credit" : "Debit",
         exp.category || "Uncategorised",
         exp.remarks || "—",
         // "INR" in the header rather than "₹" in each cell: jsPDF's default
@@ -198,7 +215,12 @@ export default function ExpensesPage() {
       theme: "grid",
       styles: { fontSize: 9 },
       headStyles: { fillColor: [79, 70, 229] },
-      foot: [["", "", "", "Page total", formatAmount(printedTotal)]],
+      foot: [
+        ["", "", "", "", "Page spent", formatAmount(printedSpent)],
+        ...(printedReceived
+          ? [["", "", "", "", "Page received", formatAmount(printedReceived)]]
+          : []),
+      ],
       footStyles: { fillColor: [241, 245, 249], textColor: 30 },
     });
 
@@ -210,31 +232,19 @@ export default function ExpensesPage() {
     loadExpenses();
   }, [loadExpenses]);
 
-  // Build category breakdown from visible expenses
-  const categoryMap = expenses.reduce((acc: any, exp: any) => {
-    const cat = exp.category || "Uncategorized";
-    acc[cat] = (acc[cat] || 0) + exp.amount;
-    return acc;
-  }, {});
+  // Pie: the server's whole-filter breakdown when it sends one, else the
+  // debits on this page. The server's is debits-only once it splits credits.
+  const serverCategories = totals?.byCategory ?? [];
+  const pieIsWholeFilter = serverCategories.length > 0;
+  const categoryPieData = pieIsWholeFilter
+    ? serverCategories.map((c) => ({
+        name: c.name || "Uncategorised",
+        value: c.total,
+      }))
+    : categoryDebitTotals(expenses);
 
-  const categoryPieData = Object.entries(categoryMap).map(([name, value]) => ({
-    name,
-    value,
-  }));
-
-  // Daily breakdown for bar chart
-  const dailyMap = expenses.reduce((acc: any, exp: any) => {
-    const date = new Date(exp.date).toLocaleDateString("en-IN", {
-      month: "short",
-      day: "numeric",
-    });
-    acc[date] = (acc[date] || 0) + exp.amount;
-    return acc;
-  }, {});
-
-  const dailyBarData = Object.entries(dailyMap)
-    .map(([date, total]) => ({ date, total }))
-    .reverse();
+  // Bars: debits on this page, one bar per UTC day, oldest first.
+  const dailyBarData = dailyDebitTotals(expenses);
 
   return (
     <>
@@ -343,6 +353,11 @@ export default function ExpensesPage() {
               }}
             />
           </div>
+          {dateRangeInvalid && (
+            <span role="alert" style={{ fontSize: 12, color: "var(--danger)" }}>
+              End date must be on or after start date
+            </span>
+          )}
           {(startDate || endDate || selectedUser) && (
             <button
               className="btn btn-outline"
@@ -360,7 +375,7 @@ export default function ExpensesPage() {
         </motion.div>
 
         {/* Charts */}
-        {expenses.length > 0 && (
+        {(dailyBarData.length > 0 || categoryPieData.length > 0) && (
           <motion.div
             className="charts-grid"
             initial={{ opacity: 0, y: 20 }}
@@ -368,78 +383,86 @@ export default function ExpensesPage() {
             transition={{ delay: 0.2 }}
           >
             {/* Daily Bar */}
-            <div className="chart-container">
-              <div className="chart-header">
-                <h3 className="chart-title">Daily Breakdown</h3>
+            {dailyBarData.length > 0 && (
+              <div className="chart-container">
+                <div className="chart-header">
+                  <h3 className="chart-title">Daily spending (this page)</h3>
+                </div>
+                <ResponsiveContainer width="100%" height={240}>
+                  <BarChart data={dailyBarData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+                    <XAxis
+                      dataKey="label"
+                      tick={{ fontSize: 11, fill: "#94A3B8" }}
+                      axisLine={false}
+                    />
+                    <YAxis
+                      tick={{ fontSize: 11, fill: "#94A3B8" }}
+                      axisLine={false}
+                      tickFormatter={(v) => `₹${v}`}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        borderRadius: 10,
+                        border: "none",
+                      }}
+                      formatter={(value: any) => [
+                        `₹${(value || 0).toLocaleString()}`,
+                        "Amount",
+                      ]}
+                    />
+                    <Bar
+                      dataKey="total"
+                      fill="#4F46E5"
+                      radius={[6, 6, 0, 0]}
+                      animationDuration={1000}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
               </div>
-              <ResponsiveContainer width="100%" height={240}>
-                <BarChart data={dailyBarData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-                  <XAxis
-                    dataKey="date"
-                    tick={{ fontSize: 11, fill: "#94A3B8" }}
-                    axisLine={false}
-                  />
-                  <YAxis
-                    tick={{ fontSize: 11, fill: "#94A3B8" }}
-                    axisLine={false}
-                    tickFormatter={(v) => `₹${v}`}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      borderRadius: 10,
-                      border: "none",
-                    }}
-                    formatter={(value: any) => [
-                      `₹${(value || 0).toLocaleString()}`,
-                      "Amount",
-                    ]}
-                  />
-                  <Bar
-                    dataKey="total"
-                    fill="#4F46E5"
-                    radius={[6, 6, 0, 0]}
-                    animationDuration={1000}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+            )}
 
             {/* Category Pie */}
-            <div className="chart-container">
-              <div className="chart-header">
-                <h3 className="chart-title">By Category</h3>
+            {categoryPieData.length > 0 && (
+              <div className="chart-container">
+                <div className="chart-header">
+                  <h3 className="chart-title">
+                    {pieIsWholeFilter
+                      ? "Spending by category (whole filter)"
+                      : "Spending by category (this page)"}
+                  </h3>
+                </div>
+                <ResponsiveContainer width="100%" height={240}>
+                  <PieChart>
+                    <Pie
+                      data={categoryPieData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={45}
+                      outerRadius={80}
+                      paddingAngle={4}
+                      dataKey="value"
+                      animationDuration={1000}
+                    >
+                      {categoryPieData.map((_, i) => (
+                        <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      formatter={(value: any) => [
+                        `₹${(value || 0).toLocaleString()}`,
+                        "Amount",
+                      ]}
+                    />
+                    <Legend
+                      iconType="circle"
+                      iconSize={8}
+                      wrapperStyle={{ fontSize: 11 }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
               </div>
-              <ResponsiveContainer width="100%" height={240}>
-                <PieChart>
-                  <Pie
-                    data={categoryPieData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={45}
-                    outerRadius={80}
-                    paddingAngle={4}
-                    dataKey="value"
-                    animationDuration={1000}
-                  >
-                    {categoryPieData.map((_, i) => (
-                      <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    formatter={(value: any) => [
-                      `₹${(value || 0).toLocaleString()}`,
-                      "Amount",
-                    ]}
-                  />
-                  <Legend
-                    iconType="circle"
-                    iconSize={8}
-                    wrapperStyle={{ fontSize: 11 }}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
+            )}
           </motion.div>
         )}
 
@@ -458,6 +481,11 @@ export default function ExpensesPage() {
                 ({pagination?.total ?? 0})
               </span>
             </h3>
+            {!loading && !error && totals && (
+              <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>
+                {describeFilterTotal(totals)}
+              </span>
+            )}
           </div>
 
           {/*
@@ -489,6 +517,7 @@ export default function ExpensesPage() {
                     <th>User</th>
                     <th>Remarks</th>
                     <th>Category</th>
+                    <th>Type</th>
                     <th>Amount</th>
                   </tr>
                 </thead>
@@ -501,7 +530,7 @@ export default function ExpensesPage() {
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.2, delay: i * 0.02 }}
                       >
-                        <td>{new Date(exp.date).toLocaleDateString()}</td>
+                        <td>{formatExpenseDate(exp.date)}</td>
                         <td>
                           <div className="table-user-cell">
                             <div
@@ -540,8 +569,22 @@ export default function ExpensesPage() {
                             </span>
                           )}
                         </td>
-                        <td style={{ fontWeight: 600, color: "var(--danger)" }}>
-                          ₹{exp.amount?.toFixed(2)}
+                        <td>
+                          <span
+                            className={`badge ${isCredit(exp) ? "success" : "danger"}`}
+                          >
+                            {isCredit(exp) ? "Credit" : "Debit"}
+                          </span>
+                        </td>
+                        <td
+                          style={{
+                            fontWeight: 600,
+                            color: isCredit(exp)
+                              ? "var(--success)"
+                              : "var(--danger)",
+                          }}
+                        >
+                          {isCredit(exp) ? "+" : ""}₹{formatAmount(exp.amount)}
                         </td>
                       </motion.tr>
                     ))}

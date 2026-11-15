@@ -2,12 +2,15 @@ import { describe, it, expect } from "vitest";
 import { AxiosError, AxiosHeaders } from "axios";
 import { describeError, populatedUser, type AdminUser } from "./adminApi";
 
-const httpError = (status: number, message?: string) => {
+const httpError = (status: number, message?: string, errors?: unknown) => {
   const err = new AxiosError("Request failed");
   err.response = {
     status,
     statusText: "",
-    data: message ? { message } : {},
+    data: {
+      ...(message ? { message } : {}),
+      ...(errors !== undefined ? { errors } : {}),
+    },
     headers: new AxiosHeaders(),
     config: { headers: new AxiosHeaders() },
   };
@@ -49,6 +52,41 @@ describe("describeError", () => {
     const err = new AxiosError("Network Error");
     err.request = {};
     expect(describeError(err)).toMatch(/could not reach the server/i);
+  });
+
+  it("names the first failing field on a 400 validation error", () => {
+    // The Expenses page sent limit=200 against a schema capped at 100; the
+    // toast said only "Validation error", which gave no hint which field.
+    const err = httpError(400, "Validation error", [
+      { field: "limit", message: "Too big: expected number to be <=100" },
+      { field: "page", message: "Expected number" },
+    ]);
+    expect(describeError(err)).toBe(
+      "Validation error — limit: Too big: expected number to be <=100",
+    );
+  });
+
+  it("omits the field name when the validation error has none", () => {
+    const err = httpError(400, "Validation error", [
+      { field: "", message: "Invalid body" },
+    ]);
+    expect(describeError(err)).toBe("Validation error — Invalid body");
+  });
+
+  it("keeps the plain message for a 400 with an empty or malformed errors list", () => {
+    expect(describeError(httpError(400, "Validation error", []))).toBe(
+      "Validation error",
+    );
+    expect(describeError(httpError(400, "Validation error", "nope"))).toBe(
+      "Validation error",
+    );
+  });
+
+  it("ignores an errors list on non-400 statuses", () => {
+    const err = httpError(500, "Server error", [
+      { field: "limit", message: "x" },
+    ]);
+    expect(describeError(err)).toBe("Server error");
   });
 
   it("never returns undefined for an unrecognised value", () => {
