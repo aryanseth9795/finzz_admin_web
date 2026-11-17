@@ -5,6 +5,12 @@ import {
   pageTotal,
   describePeriod,
   formatAmount,
+  isCredit,
+  formatExpenseDate,
+  dailyDebitTotals,
+  categoryDebitTotals,
+  categoryPieData,
+  pageCredits,
 } from "./expenseReport";
 
 const meta = (page: number, pages: number, total: number, limit = 50) => ({
@@ -88,7 +94,7 @@ describe("ADM-003 — the PDF that misstated financial totals", () => {
 describe("The two totals are never conflated", () => {
   it("reports the server's aggregate as the filter total", () => {
     expect(describeFilterTotal({ totalAmount: 52300, count: 523 })).toBe(
-      "Filter total: 52,300.00  across 523 transaction(s)",
+      "Filter total (debits + credits): 52,300.00  across 523 transaction(s)",
     );
   });
 
@@ -135,5 +141,188 @@ describe("Period and amount formatting", () => {
     expect(formatAmount(1234567)).toBe("12,34,567.00");
     expect(formatAmount(0)).toBe("0.00");
     expect(formatAmount(NaN)).toBe("0.00");
+  });
+});
+
+describe("Debits and credits are kept apart", () => {
+  it("treats only an explicit 'credit' as a credit (legacy rows are debits)", () => {
+    expect(isCredit({ type: "credit" })).toBe(true);
+    expect(isCredit({ type: "debit" })).toBe(false);
+    expect(isCredit({})).toBe(false);
+  });
+
+  it("page total counts debits only; page credits counts credits only", () => {
+    const rows = [
+      { amount: 100 },
+      { amount: 40, type: "debit" as const },
+      { amount: 500, type: "credit" as const },
+      { amount: 25.5, type: "credit" as const },
+    ];
+    expect(pageTotal(rows)).toBe(140);
+    expect(pageCredits(rows)).toBe(525.5);
+  });
+
+  it("page credits ignores null and NaN amounts", () => {
+    expect(
+      pageCredits([
+        { amount: NaN, type: "credit" },
+        { amount: undefined, type: "credit" },
+        { amount: 10, type: "credit" },
+      ]),
+    ).toBe(10);
+  });
+});
+
+describe("formatExpenseDate — UTC midnight dates", () => {
+  it("formats in en-IN using the UTC calendar day", () => {
+    // Stored at UTC midnight; a browser west of UTC would otherwise show the
+    // previous day.
+    expect(formatExpenseDate("2026-03-10T00:00:00.000Z")).toBe("10 Mar 2026");
+    expect(formatExpenseDate("2026-03-03T23:59:59.000Z")).toBe("03 Mar 2026");
+  });
+});
+
+describe("dailyDebitTotals — the daily bar chart", () => {
+  it("sums debits per UTC day, ascending, and leaves credits out", () => {
+    const rows = [
+      { amount: 30, date: "2026-03-11T00:00:00.000Z" },
+      { amount: 10, date: "2026-03-10T00:00:00.000Z", type: "debit" as const },
+      { amount: 5, date: "2026-03-10T00:00:00.000Z" },
+      { amount: 999, date: "2026-03-10T00:00:00.000Z", type: "credit" as const },
+    ];
+    expect(dailyDebitTotals(rows)).toEqual([
+      { key: "2026-03-10", label: "10 Mar", total: 15 },
+      { key: "2026-03-11", label: "11 Mar", total: 30 },
+    ]);
+  });
+
+  it("does not merge the same day of different years, and labels the year", () => {
+    // The old reducer keyed on "10 Mar", so 2025 and 2026 shared one bar.
+    const rows = [
+      { amount: 20, date: "2026-03-10T00:00:00.000Z" },
+      { amount: 7, date: "2025-03-10T00:00:00.000Z" },
+    ];
+    expect(dailyDebitTotals(rows)).toEqual([
+      { key: "2025-03-10", label: "10 Mar 2025", total: 7 },
+      { key: "2026-03-10", label: "10 Mar 2026", total: 20 },
+    ]);
+  });
+
+  it("returns nothing for a page of credits only", () => {
+    expect(
+      dailyDebitTotals([
+        { amount: 50, date: "2026-03-10T00:00:00.000Z", type: "credit" },
+      ]),
+    ).toEqual([]);
+  });
+
+  it("skips rows with an unparseable date", () => {
+    expect(
+      dailyDebitTotals([
+        { amount: 50, date: "not a date" },
+        { amount: 5, date: "2026-03-10T00:00:00.000Z" },
+      ]),
+    ).toEqual([{ key: "2026-03-10", label: "10 Mar", total: 5 }]);
+  });
+});
+
+describe("categoryDebitTotals — the per-page pie fallback", () => {
+  it("sums debits by category, largest first, with a label for blanks", () => {
+    const rows = [
+      { amount: 10, category: "Food" },
+      { amount: 40, category: "Travel" },
+      { amount: 15, category: "Food" },
+      { amount: 5 },
+      { amount: 3, category: "" },
+      { amount: 1000, category: "Salary", type: "credit" as const },
+    ];
+    expect(categoryDebitTotals(rows)).toEqual([
+      { name: "Travel", value: 40 },
+      { name: "Food", value: 25 },
+      { name: "Uncategorised", value: 8 },
+    ]);
+  });
+
+  it("is empty when the page has no debits", () => {
+    expect(
+      categoryDebitTotals([{ amount: 5, category: "Gift", type: "credit" }]),
+    ).toEqual([]);
+  });
+});
+
+describe("describeFilterTotal — with server credit totals", () => {
+  it("states spent and received separately when the server splits them", () => {
+    expect(
+      describeFilterTotal({
+        totalAmount: 52300,
+        totalCredits: 1500,
+        count: 530,
+        debitCount: 523,
+        creditCount: 7,
+      }),
+    ).toBe(
+      "Spent: 52,300.00 across 523 debit(s) · Received: 1,500.00 across 7 credit(s)",
+    );
+  });
+
+  it("falls back to the overall count when per-type counts are missing", () => {
+    expect(
+      describeFilterTotal({ totalAmount: 100, totalCredits: 0, count: 4 }),
+    ).toBe("Spent: 100.00 across 4 transaction(s) · Received: 0.00");
+  });
+
+  it("keeps the old sentence against a server without credit totals", () => {
+    expect(describeFilterTotal({ totalAmount: 100, count: 4 })).toBe(
+      "Filter total (debits + credits): 100.00  across 4 transaction(s)",
+    );
+  });
+});
+
+describe("categoryPieData — which breakdown the pie uses", () => {
+  const rows = [
+    { amount: 300, category: "Food", type: "debit" as const },
+    { amount: 50000, category: "Salary", type: "credit" as const },
+  ];
+  const mixed = [
+    { name: "Salary", total: 50000, count: 1 },
+    { name: "Food", total: 300, count: 1 },
+  ];
+
+  it("ignores byCategory from a server that does not split credits", () => {
+    // The live server's byCategory sums credits in, so a Salary credit
+    // would show as spending under "whole filter".
+    const pie = categoryPieData({ totalAmount: 50300, count: 2, byCategory: mixed }, rows);
+    expect(pie.wholeFilter).toBe(false);
+    expect(pie.data).toEqual([{ name: "Food", value: 300 }]);
+  });
+
+  it("uses the server breakdown once it reports totalCredits", () => {
+    const pie = categoryPieData(
+      {
+        totalAmount: 300,
+        totalCredits: 50000,
+        count: 2,
+        byCategory: [{ name: "Food", total: 300, count: 1 }, { name: "", total: 5, count: 1 }],
+      },
+      rows,
+    );
+    expect(pie.wholeFilter).toBe(true);
+    expect(pie.data).toEqual([
+      { name: "Food", value: 300 },
+      { name: "Uncategorised", value: 5 },
+    ]);
+  });
+
+  it("falls back to this page when the split server sends no categories", () => {
+    const pie = categoryPieData({ totalAmount: 0, totalCredits: 0, count: 0, byCategory: [] }, rows);
+    expect(pie.wholeFilter).toBe(false);
+    expect(pie.data).toEqual([{ name: "Food", value: 300 }]);
+  });
+
+  it("falls back to this page when totals are missing", () => {
+    expect(categoryPieData(null, rows)).toEqual({
+      wholeFilter: false,
+      data: [{ name: "Food", value: 300 }],
+    });
   });
 });

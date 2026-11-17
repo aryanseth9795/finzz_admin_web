@@ -50,16 +50,122 @@ export const describeTableScope = (
  * "unavailable" rather than silently falling back to the page sum — falling
  * back is what produced the wrong number in the first place.
  */
-export const describeFilterTotal = (totals: ExpenseTotals | null): string =>
-  totals
-    ? `Filter total: ${formatAmount(totals.totalAmount)}  across ${totals.count} transaction(s)`
-    : "Filter total: unavailable";
+export const describeFilterTotal = (totals: ExpenseTotals | null): string => {
+  if (!totals) return "Filter total: unavailable";
+  // Older servers send one undivided total; keep the old sentence for them.
+  // Their total includes credits, so say so beside a debits-only page total.
+  if (typeof totals.totalCredits !== "number") {
+    return `Filter total (debits + credits): ${formatAmount(totals.totalAmount)}  across ${totals.count} transaction(s)`;
+  }
+  const spent =
+    typeof totals.debitCount === "number"
+      ? `across ${totals.debitCount} debit(s)`
+      : `across ${totals.count} transaction(s)`;
+  const received =
+    typeof totals.creditCount === "number"
+      ? ` across ${totals.creditCount} credit(s)`
+      : "";
+  return `Spent: ${formatAmount(totals.totalAmount)} ${spent} · Received: ${formatAmount(totals.totalCredits)}${received}`;
+};
 
-/** Sum of the rows actually printed. Always labelled "Page total". */
-export const pageTotal = (rows: { amount?: number }[]): number =>
-  rows.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
+/** The fields of an expense row the report helpers read. */
+export interface ExpenseRow {
+  amount?: number;
+  date?: string;
+  category?: string;
+  type?: "debit" | "credit";
+}
 
-export const describePeriod = (startDate: string, endDate: string): string =>
+/** Missing `type` is a debit (legacy rows predate the field). */
+export const isCredit = (row: { type?: string }): boolean =>
+  row.type === "credit";
+
+const amountOf = (row: { amount?: number }): number => Number(row.amount) || 0;
+
+/** Sum of the DEBIT rows actually printed. Labelled "Page spent". */
+export const pageTotal = (rows: ExpenseRow[]): number =>
+  rows.reduce((sum, row) => (isCredit(row) ? sum : sum + amountOf(row)), 0);
+
+/** Sum of the CREDIT rows actually printed. Labelled "Page received". */
+export const pageCredits = (rows: ExpenseRow[]): number =>
+  rows.reduce((sum, row) => (isCredit(row) ? sum + amountOf(row) : sum), 0);
+
+/** Expenses are stored at UTC midnight, so format the UTC calendar day. */
+export const formatExpenseDate = (iso: string): string =>
+  new Date(iso).toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+
+/**
+ * Debit totals per UTC day, oldest first. Keyed on the full date so the same
+ * day in different years stays two bars; the year is shown only when needed.
+ */
+export const dailyDebitTotals = (
+  rows: ExpenseRow[],
+): { key: string; label: string; total: number }[] => {
+  const byDay = new Map<string, number>();
+  for (const row of rows) {
+    if (isCredit(row) || !row.date) continue;
+    const d = new Date(row.date);
+    if (Number.isNaN(d.getTime())) continue;
+    const key = d.toISOString().slice(0, 10);
+    byDay.set(key, (byDay.get(key) ?? 0) + amountOf(row));
+  }
+  const keys = [...byDay.keys()].sort();
+  const oneYear = new Set(keys.map((k) => k.slice(0, 4))).size <= 1;
+  return keys.map((key) => ({
+    key,
+    label: new Date(`${key}T00:00:00.000Z`).toLocaleDateString("en-IN", {
+      day: "numeric",
+      month: "short",
+      ...(oneYear ? {} : { year: "numeric" as const }),
+      timeZone: "UTC",
+    }),
+    total: byDay.get(key) ?? 0,
+  }));
+};
+
+/** Debit totals per category for the rows held, largest first. */
+export const categoryDebitTotals = (
+  rows: ExpenseRow[],
+): { name: string; value: number }[] => {
+  const byCat = new Map<string, number>();
+  for (const row of rows) {
+    if (isCredit(row)) continue;
+    const name = row.category || "Uncategorised";
+    byCat.set(name, (byCat.get(name) ?? 0) + amountOf(row));
+  }
+  return [...byCat.entries()]
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => b.value - a.value);
+};
+
+/**
+ * The pie's data. The server's whole-filter `byCategory` is used only when the
+ * server also sends `totalCredits`: older servers sum credits into it, which
+ * would show income (e.g. Salary) as spending. Otherwise: debits on this page.
+ */
+export const categoryPieData = (
+  totals: ExpenseTotals | null,
+  rows: ExpenseRow[],
+): { wholeFilter: boolean; data: { name: string; value: number }[] } => {
+  const server = totals?.byCategory ?? [];
+  if (typeof totals?.totalCredits === "number" && server.length > 0) {
+    return {
+      wholeFilter: true,
+      data: server.map((c) => ({
+        name: c.name || "Uncategorised",
+        value: c.total,
+      })),
+    };
+  }
+  return { wholeFilter: false, data: categoryDebitTotals(rows) };
+};
+
+export const describePeriod =(startDate: string, endDate: string): string =>
   startDate || endDate
     ? `Period: ${startDate || "earliest"} to ${endDate || "today"}`
     : "Period: All time";

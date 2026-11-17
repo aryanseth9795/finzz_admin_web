@@ -59,16 +59,25 @@ api.interceptors.response.use(
  * unhelpful string — when it surfaced at all.
  */
 export const describeError = (error: unknown): string => {
-  const axiosError = error as AxiosError<{ message?: string }>;
+  const axiosError = error as AxiosError<{
+    message?: string;
+    errors?: unknown;
+  }>;
 
   if (axiosError?.response) {
-    if (axiosError.response.status === 401) {
+    const { status, data } = axiosError.response;
+    if (status === 401) {
       return "Your session expired. Please sign in again.";
     }
-    return (
-      axiosError.response.data?.message ??
-      `Request failed (${axiosError.response.status})`
-    );
+    const message = data?.message ?? `Request failed (${status})`;
+    // Validation 400s carry `errors: [{ field, message }]`; name the first
+    // one, otherwise the toast says only "Validation error".
+    const first = Array.isArray(data?.errors) ? data.errors[0] : undefined;
+    if (status === 400 && first && typeof first.message === "string") {
+      const field = typeof first.field === "string" ? first.field : "";
+      return `${message} — ${field ? `${field}: ` : ""}${first.message}`;
+    }
+    return message;
   }
   if (axiosError?.code === "ECONNABORTED") {
     return "The request timed out. Please try again.";
@@ -219,8 +228,14 @@ export const populatedUser = (
   ref && typeof ref === "object" && "_id" in ref ? ref : null;
 
 export interface ExpenseTotals {
+  /** Debits only on servers that also send `totalCredits`. */
   totalAmount: number;
   count: number;
+  /** Optional: absent on servers that predate the debit/credit split. */
+  totalCredits?: number;
+  debitCount?: number;
+  creditCount?: number;
+  /** Debits only on servers that also send `totalCredits`. */
   byCategory?: { name: string; total: number; count: number }[];
 }
 
@@ -306,7 +321,8 @@ export interface UserDetailResponse {
    * exist, so the type keeps the possibility visible.
    */
   user: Omit<AdminUser, "friends"> & { friends?: (AdminUser | null)[] };
-  expenseSummary: { totalAmount: number; count: number };
+  /** `totalAmount` is debits only on servers that send `totalCredits`. */
+  expenseSummary: { totalAmount: number; count: number; totalCredits?: number };
   /**
    * Was always `[]` because the server queried `createdBy` and
    * `members.userId`, neither of which exists on the Pool schema — so the

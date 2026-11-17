@@ -266,10 +266,14 @@ export default function PoolsPage() {
                           gap: 4,
                         }}
                       >
-                        {pool.members.slice(0, 5).map((m: any, i: number) =>
+                        {/* A deleted member populates as null; skip it. */}
+                        {pool.members
+                          .filter(Boolean)
+                          .slice(0, 5)
+                          .map((m: any, i: number) =>
                           m.avatar ? (
                             <img
-                              key={i}
+                              key={m._id ?? i}
                               src={m.avatar}
                               alt=""
                               className="table-avatar"
@@ -284,7 +288,7 @@ export default function PoolsPage() {
                             />
                           ) : (
                             <div
-                              key={i}
+                              key={m._id ?? i}
                               className="table-avatar-placeholder"
                               style={{
                                 width: 30,
